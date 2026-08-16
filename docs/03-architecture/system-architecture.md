@@ -1,8 +1,12 @@
 # System Architecture
 
-**Status: structural only — no technology stack has been chosen yet** (see [Project State](../00-project/project-state.md) § Blocked). This note captures the shape the system must have to satisfy [Requirements](../01-product/requirements.md); fill in concrete tech choices as ADRs once decided.
+**Status: frontend confirmed, backend still structural-only.** Frontend is Flutter, targeting Android and iOS as the two primary mobile platforms (web secondary) — see [ADR-007](../04-decisions/adr-007-flutter-as-the-cross-platform-frontend.md). Backend/database/cloud choices are still undecided (see [Project State](../00-project/project-state.md) § Blocked); this note captures the shape the backend must have to satisfy [Requirements](../01-product/requirements.md) until those are chosen and recorded as ADRs.
 
-## Components implied by requirements
+## Frontend (confirmed — [ADR-007](../04-decisions/adr-007-flutter-as-the-cross-platform-frontend.md))
+
+Flutter, single codebase → Android + iOS + Web. State management is Riverpod; navigation is a fixed linear flow via `Navigator.push`/`pushReplacement`, no router package. Business logic is isolated behind `abstract interface class` service contracts (`AuthService`, `MatchingService`, etc.) with `Mock*` implementations for the current backend-less scaffold — this is the seam a real backend integration swaps into, without touching UI code. Cross-platform permission handling (location, camera, for SOS/KYC features) needs to be declared independently on both iOS (`Info.plist` usage-description keys) and Android (manifest permissions) before those features are implemented — see [ADR-007](../04-decisions/adr-007-flutter-as-the-cross-platform-frontend.md) § Consequences.
+
+## Components implied by requirements (backend, not yet built)
 
 - **Onboarding & verification service** — phone OTP, LinkedIn OAuth, work-email domain verification, device attestation. See [Verification Model](../02-domain/verification-model.md).
 - **Trust engine** — computes trust level (0–4) and continuous trust score; gates feature access. See [Trust Levels](../02-domain/trust-levels.md), [Trust & Safety Architecture](trust-and-safety-architecture.md).

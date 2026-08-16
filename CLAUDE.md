@@ -10,8 +10,10 @@ Business/product truth for this app lives in `docs/` (exported from the Cowork p
 - `docs/01-product/requirements.md`, `docs/01-product/personas.md` — functional/non-functional requirements, target users.
 - `docs/02-domain/domain-model.md`, `docs/02-domain/trust-levels.md`, `docs/02-domain/verification-model.md` — the domain vocabulary and the trust-level/verification model the app implements.
 - `docs/03-architecture/` — system architecture, threat model, trust & safety architecture, safety features catalog, privacy/anti-abuse controls, operations & incident response.
-- `docs/04-decisions/` — ADR-001 through ADR-006. Why decisions were made; don't silently re-decide something recorded here — if a decision looks wrong once you're in the code, say so and propose a new ADR rather than implementing around it.
+- `docs/04-decisions/` — ADR-001 through ADR-007. Why decisions were made; don't silently re-decide something recorded here — if a decision looks wrong once you're in the code, say so and propose a new ADR rather than implementing around it.
 - `docs/05-ux/safety-ux-flows.md`, `docs/06-roadmap/roadmap.md`, `docs/07-research/` — UX flows, phased roadmap, legal/market research backing the above.
+
+`docs/` is generated — never hand-edit files under it. The vault ("Professional Meetups Vault" in the user's Documents folder) is the source of truth; after editing a note there, run `python3 scripts/sync_docs_from_vault.py` from the repo root to refresh `docs/` (mechanical wikilink-to-relative-link conversion, no content changes — safe and cheap to run anytime).
 
 ## Known Gaps (flagged 2026-08-16, not yet fixed)
 
@@ -23,16 +25,27 @@ All commands run from the `Professional-Meetups/` directory (the Flutter project
 
 ```bash
 flutter pub get                        # install dependencies
-flutter run                            # run on a connected device/emulator (android or chrome)
+flutter run                            # run on a connected device/emulator (android, ios, or chrome)
 flutter run -d chrome                  # run the web target specifically
+flutter run -d ios                     # run on an iOS simulator/device
 flutter test                           # run all tests
 flutter test test/validators_test.dart # run a single test file
 flutter analyze                        # static analysis (uses analysis_options.yaml / flutter_lints)
+dart format --output=none --set-exit-if-changed .  # formatting check (CI-enforced, see below)
+dart format .                          # auto-fix formatting
 flutter build apk                      # android release build
+flutter build ios                      # ios release build (requires signing set up in Xcode first)
 flutter build web                      # web release build
 ```
 
-Only `android` and `web` platform folders exist — there is no ios/macos/linux/windows scaffolding in this repo.
+`android`, `ios`, `macos`, and `web` platform folders all exist (added 2026-08-16 via Xcode/`flutter create` platform scaffolding) — there is no linux/windows scaffolding. iOS is a real target (built alongside Android per the product's cross-platform requirement); the `macos` folder was scaffolded as a side effect and isn't an active target unless that changes.
+
+iOS-specific notes:
+- Open `ios/Runner.xcworkspace` (not `.xcodeproj`) in Xcode for signing/capabilities — CocoaPods wires the Flutter framework into the workspace, not the bare project.
+- `ios/Runner/Info.plist` has no usage-description keys yet (no location/camera/photo-library permissions requested) because no plugin needs them yet. Before implementing anything that touches live location, SOS, or KYC selfie capture (`docs/03-architecture/safety-features-catalog.md`, `docs/02-domain/verification-model.md` § 7), add the corresponding `NSLocationWhenInUseUsageDescription` / `NSCameraUsageDescription` etc. here, and the matching Android manifest permissions — both platforms need this before those features can run at all, not just before they can ship.
+- `analysis_options.yaml` now excludes `build/**`, `android/**`, `ios/**`, `macos/**`, `web/**`, `windows/**`, `linux/**` from the analyzer — generated platform code won't show up in `flutter analyze` or the CI lint step.
+
+`.github/workflows/flutter-ci.yml` runs on every push/PR to `main`: `dart format --set-exit-if-changed`, `flutter analyze --fatal-infos`, then `flutter test --coverage`. Run all three locally before pushing.
 
 ## Architecture
 
@@ -65,6 +78,8 @@ main.dart → SplashScreen → LandingPage → OnboardingFlow (4 steps: welcome 
 
 `IntentType` ([lib/core/models/intent_type.dart](lib/core/models/intent_type.dart)) encodes both display metadata (label/icon) and a `requiredTrustLevel` per intent (e.g. `rideShare`/`dating` require trust level 4, everything else level 1), exposed via `isUnlockedFor(trustLevel)`. `UserProfile.trustLevel` is meant to drive this gating throughout the matching/home features — check this enum before adding a new intent type or changing unlock rules.
 
+**Scope gap vs. [ADR-004](docs/04-decisions/adr-004-defer-dating-and-open-ride-sharing.md):** `dating` and `rideShare` are already full `IntentType` members and appear in `intent_picker_sheet.dart`'s selectable list (it iterates `IntentType.values`) and in the landing page's `orbiting_intents.dart`. ADR-004 defers both to Phase 2/3 — they should exist only as modeled-but-inert enum values for now. Don't build out matching/chat/safety infrastructure behind these two intents as part of Phase 1 work without checking the roadmap first; flag it if a task seems to ask for that.
+
 ### Design system
 
 Dark, glassmorphism-style UI. All colors are tokens in `AppPalette` ([lib/core/theme/app_palette.dart](lib/core/theme/app_palette.dart)) — never hardcode colors in feature widgets. Shared chrome lives in `lib/core/widgets/`:
@@ -74,3 +89,11 @@ Dark, glassmorphism-style UI. All colors are tokens in `AppPalette` ([lib/core/t
 ### Feature folder layout
 
 `lib/features/<feature>/` holds the page, with a `widgets/` subfolder for composed pieces used only by that page (e.g. `features/home/widgets/`, `features/landing/widgets/`). Cross-feature reusable pieces belong in `lib/core/widgets/` instead, not duplicated per-feature.
+
+## Security rule (forward-looking)
+
+There's no persistence layer yet, but when one is added: per [ADR-003](docs/04-decisions/adr-003-ephemeral-work-email-verification.md), a raw work-email address must never be stored past the verification round-trip — persist only `company_domain`, `work_email_verified`, and `verified_at` (90-day re-verification), never the address itself.
+
+## Git rule
+
+Commit docs and the code implementing them together where practical (e.g. a `docs/` change alongside the feature that implements it), per `docs/00-project/cowork-operating-charter.md`.

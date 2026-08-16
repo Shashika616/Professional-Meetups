@@ -120,10 +120,15 @@ class LandingPage extends StatelessWidget {
       child: const Row(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(width: 10),
-          Text(
-            'VERIFIED PROFESSIONALS | REAL CONNECTIONS',
-            style: TextStyle(fontSize: 9, letterSpacing: 1.6, fontWeight: FontWeight.w700, color: AppPalette.textPrimary),
+          Flexible(
+            child: Text(
+              'VERIFIED PROFESSIONALS | REAL CONNECTIONS',
+              textAlign: TextAlign.center,
+              maxLines: 1,
+              softWrap: false,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(fontSize: 9, letterSpacing: 1.6, fontWeight: FontWeight.w700, color: AppPalette.textPrimary),
+            ),
           ),
         ],
       ),
