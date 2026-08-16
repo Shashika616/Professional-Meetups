@@ -32,7 +32,8 @@ class AppBackground extends StatelessWidget {
                       'assets/images/suit.png',
                       fit: BoxFit.cover,
                       cacheWidth: 1080, // Limit cache size
-                      errorBuilder: (context, error, stackTrace) => const SizedBox.shrink(),
+                      errorBuilder: (context, error, stackTrace) =>
+                          const SizedBox.shrink(),
                     ),
                   ),
                 ),

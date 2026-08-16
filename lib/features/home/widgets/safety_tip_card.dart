@@ -17,7 +17,11 @@ class SafetyTipCard extends StatelessWidget {
         padding: const EdgeInsets.all(16),
         child: Row(
           children: [
-            const Icon(Icons.shield_outlined, color: AppPalette.verified, size: 20),
+            const Icon(
+              Icons.shield_outlined,
+              color: AppPalette.verified,
+              size: 20,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: Text(

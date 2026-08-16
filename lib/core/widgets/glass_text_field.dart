@@ -45,7 +45,10 @@ class GlassTextField extends StatelessWidget {
           border: InputBorder.none,
           counterText: '',
           hintText: hint,
-          hintStyle: const TextStyle(color: AppPalette.textSecondary, letterSpacing: 0),
+          hintStyle: const TextStyle(
+            color: AppPalette.textSecondary,
+            letterSpacing: 0,
+          ),
           icon: Icon(icon, color: AppPalette.candyBlue, size: 20),
         ),
         validator: validator,

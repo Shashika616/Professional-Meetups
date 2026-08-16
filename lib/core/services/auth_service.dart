@@ -4,7 +4,10 @@ import 'package:professional_connections_platform/core/validation/validators.dar
 /// The client never decides trust. It only displays what the server returns.
 abstract interface class AuthService {
   Future<void> requestPhoneOtp(String phoneNumber);
-  Future<void> verifyPhoneOtp({required String phoneNumber, required String code});
+  Future<void> verifyPhoneOtp({
+    required String phoneNumber,
+    required String code,
+  });
   Future<void> connectLinkedIn(String profileUrl);
   Future<void> verifyCorporateEmail(String email);
 }
@@ -19,7 +22,10 @@ class MockAuthService implements AuthService {
   }
 
   @override
-  Future<void> verifyPhoneOtp({required String phoneNumber, required String code}) async {
+  Future<void> verifyPhoneOtp({
+    required String phoneNumber,
+    required String code,
+  }) async {
     await Future<void>.delayed(latency);
     if (Validators.otp(code) != null) {
       throw const FormatException('Invalid verification code.');

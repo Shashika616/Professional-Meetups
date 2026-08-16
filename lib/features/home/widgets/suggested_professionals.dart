@@ -30,22 +30,28 @@ class SuggestedProfessionals extends ConsumerWidget {
               loading: () => ListView.separated(
                 scrollDirection: Axis.horizontal,
                 itemCount: 3,
-                separatorBuilder: (_, __) => const SizedBox(width: 12),
-                itemBuilder: (_, __) => const _SuggestedSkeleton(),
+                separatorBuilder: (_, _) => const SizedBox(width: 12),
+                itemBuilder: (_, _) => const _SuggestedSkeleton(),
               ),
-              error: (_, __) => const SizedBox.shrink(),
+              error: (_, _) => const SizedBox.shrink(),
               data: (page) => page.items.isEmpty
                   ? const Text(
                       'No suggestions yet for this intent.',
-                      style: TextStyle(color: AppPalette.textSecondary, fontSize: 12),
+                      style: TextStyle(
+                        color: AppPalette.textSecondary,
+                        fontSize: 12,
+                      ),
                     )
                   : ListView.separated(
                       scrollDirection: Axis.horizontal,
                       itemCount: page.items.length,
-                      separatorBuilder: (_, __) => const SizedBox(width: 12),
+                      separatorBuilder: (_, _) => const SizedBox(width: 12),
                       itemBuilder: (context, index) => _SuggestedCard(
                         match: page.items[index],
-                        onConnect: () => showSnack(context, 'Meetup request sent to ${page.items[index].name}'),
+                        onConnect: () => showSnack(
+                          context,
+                          'Meetup request sent to ${page.items[index].name}',
+                        ),
                       ),
                     ),
             ),
@@ -79,11 +85,19 @@ class _SuggestedCard extends StatelessWidget {
                   backgroundColor: AppPalette.deepBlue,
                   child: Text(
                     match.initials,
-                    style: const TextStyle(color: AppPalette.candyBlue, fontWeight: FontWeight.w700, fontSize: 12),
+                    style: const TextStyle(
+                      color: AppPalette.candyBlue,
+                      fontWeight: FontWeight.w700,
+                      fontSize: 12,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
-                const Icon(Icons.verified, size: 14, color: AppPalette.verified),
+                const Icon(
+                  Icons.verified,
+                  size: 14,
+                  color: AppPalette.verified,
+                ),
               ],
             ),
             const SizedBox(height: 10),
@@ -91,34 +105,56 @@ class _SuggestedCard extends StatelessWidget {
               match.name,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppPalette.textPrimary, fontSize: 13, fontWeight: FontWeight.w700),
+              style: const TextStyle(
+                color: AppPalette.textPrimary,
+                fontSize: 13,
+                fontWeight: FontWeight.w700,
+              ),
             ),
             const SizedBox(height: 2),
             Text(
               match.role,
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
-              style: const TextStyle(color: AppPalette.textSecondary, fontSize: 11),
+              style: const TextStyle(
+                color: AppPalette.textSecondary,
+                fontSize: 11,
+              ),
             ),
             const Spacer(),
             Row(
               children: [
                 Text(
                   '${match.formattedDistance} AWAY',
-                  style: const TextStyle(fontSize: 8, letterSpacing: 1, color: AppPalette.textSecondary, fontWeight: FontWeight.w700),
+                  style: const TextStyle(
+                    fontSize: 8,
+                    letterSpacing: 1,
+                    color: AppPalette.textSecondary,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 const Spacer(),
                 GestureDetector(
                   onTap: onConnect,
                   child: Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 7,
+                    ),
                     decoration: BoxDecoration(
                       borderRadius: BorderRadius.circular(14),
-                      gradient: const LinearGradient(colors: [AppPalette.candyBlue, AppPalette.steelBlue]),
+                      gradient: const LinearGradient(
+                        colors: [AppPalette.candyBlue, AppPalette.steelBlue],
+                      ),
                     ),
                     child: const Text(
                       'CONNECT',
-                      style: TextStyle(fontSize: 8, letterSpacing: 1.2, fontWeight: FontWeight.w900, color: AppPalette.onyx),
+                      style: TextStyle(
+                        fontSize: 8,
+                        letterSpacing: 1.2,
+                        fontWeight: FontWeight.w900,
+                        color: AppPalette.onyx,
+                      ),
                     ),
                   ),
                 ),

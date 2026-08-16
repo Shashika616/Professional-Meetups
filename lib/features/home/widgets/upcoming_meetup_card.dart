@@ -30,7 +30,11 @@ class UpcomingMeetupCard extends StatelessWidget {
                         color: AppPalette.candyBlue.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(12),
                       ),
-                      child: const Icon(Icons.coffee_rounded, color: AppPalette.candyBlue, size: 20),
+                      child: const Icon(
+                        Icons.coffee_rounded,
+                        color: AppPalette.candyBlue,
+                        size: 20,
+                      ),
                     ),
                     const SizedBox(width: 12),
                     Expanded(
@@ -39,26 +43,43 @@ class UpcomingMeetupCard extends StatelessWidget {
                         children: const [
                           Text(
                             'Coffee with Sachini Fernando',
-                            style: TextStyle(color: AppPalette.textPrimary, fontSize: 14, fontWeight: FontWeight.w700),
+                            style: TextStyle(
+                              color: AppPalette.textPrimary,
+                              fontSize: 14,
+                              fontWeight: FontWeight.w700,
+                            ),
                           ),
                           SizedBox(height: 4),
                           Text(
                             'Today, 12:30 PM • Colombo Fort',
-                            style: TextStyle(color: AppPalette.textSecondary, fontSize: 12),
+                            style: TextStyle(
+                              color: AppPalette.textSecondary,
+                              fontSize: 12,
+                            ),
                           ),
                         ],
                       ),
                     ),
                     Container(
-                      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 10,
+                        vertical: 6,
+                      ),
                       decoration: BoxDecoration(
                         color: AppPalette.verified.withValues(alpha: 0.12),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: AppPalette.verified.withValues(alpha: 0.35)),
+                        border: Border.all(
+                          color: AppPalette.verified.withValues(alpha: 0.35),
+                        ),
                       ),
                       child: const Text(
                         'CONFIRMED',
-                        style: TextStyle(fontSize: 8, letterSpacing: 1.2, fontWeight: FontWeight.w800, color: AppPalette.verified),
+                        style: TextStyle(
+                          fontSize: 8,
+                          letterSpacing: 1.2,
+                          fontWeight: FontWeight.w800,
+                          color: AppPalette.verified,
+                        ),
                       ),
                     ),
                   ],
@@ -68,17 +89,29 @@ class UpcomingMeetupCard extends StatelessWidget {
                   children: [
                     Expanded(
                       child: GestureDetector(
-                        onTap: () => showSnack(context, 'Check-in opens 10 minutes before the meetup.'),
+                        onTap: () => showSnack(
+                          context,
+                          'Check-in opens 10 minutes before the meetup.',
+                        ),
                         child: Container(
                           height: 42,
                           decoration: BoxDecoration(
                             borderRadius: BorderRadius.circular(21),
-                            border: Border.all(color: AppPalette.candyBlue.withValues(alpha: 0.5)),
+                            border: Border.all(
+                              color: AppPalette.candyBlue.withValues(
+                                alpha: 0.5,
+                              ),
+                            ),
                           ),
                           child: const Center(
                             child: Text(
                               'CHECK IN',
-                              style: TextStyle(color: AppPalette.candyBlue, fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.6),
+                              style: TextStyle(
+                                color: AppPalette.candyBlue,
+                                fontSize: 11,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.6,
+                              ),
                             ),
                           ),
                         ),
@@ -86,7 +119,10 @@ class UpcomingMeetupCard extends StatelessWidget {
                     ),
                     const SizedBox(width: 10),
                     GestureDetector(
-                      onTap: () => showSnack(context, 'Safety checklist and live share will open here.'),
+                      onTap: () => showSnack(
+                        context,
+                        'Safety checklist and live share will open here.',
+                      ),
                       child: Container(
                         height: 42,
                         width: 42,
@@ -95,7 +131,11 @@ class UpcomingMeetupCard extends StatelessWidget {
                           border: Border.all(color: AppPalette.glassBorder),
                           color: Colors.white.withValues(alpha: 0.05),
                         ),
-                        child: const Icon(Icons.shield_outlined, size: 18, color: AppPalette.textSecondary),
+                        child: const Icon(
+                          Icons.shield_outlined,
+                          size: 18,
+                          color: AppPalette.textSecondary,
+                        ),
                       ),
                     ),
                   ],

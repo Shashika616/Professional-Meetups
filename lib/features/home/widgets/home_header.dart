@@ -27,7 +27,10 @@ class HomeHeader extends StatelessWidget {
                 const SizedBox(height: 12),
                 Text(
                   _greeting(),
-                  style: TextStyle(color: AppPalette.textSecondary.withValues(alpha: 0.8), fontSize: 13),
+                  style: TextStyle(
+                    color: AppPalette.textSecondary.withValues(alpha: 0.8),
+                    fontSize: 13,
+                  ),
                 ),
                 const SizedBox(height: 2),
                 Text(
@@ -44,8 +47,8 @@ class HomeHeader extends StatelessWidget {
           ),
           _NotificationBell(
             onTap: () => showSnack(
-              context, 
-              'Notifications will arrive once the backend is live.', 
+              context,
+              'Notifications will arrive once the backend is live.',
               type: ToastType.info,
             ),
           ),
@@ -75,9 +78,12 @@ class _NotificationBell extends StatelessWidget {
       onTap: onTap,
       child: Padding(
         padding: const EdgeInsets.all(8.0),
-        child: const Icon(Icons.notifications_none_rounded, size: 24, color: AppPalette.textPrimary),
+        child: const Icon(
+          Icons.notifications_none_rounded,
+          size: 24,
+          color: AppPalette.textPrimary,
+        ),
       ),
     );
   }
 }
-

@@ -2,9 +2,9 @@ name: Flutter CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
   pull_request:
-    branches: [main]
+    branches: [main, develop]
 
 jobs:
   analyze-and-test:
@@ -12,9 +12,15 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Pinned, not `channel: stable` — an unpinned channel drifts to whatever
+      # Dart/Flutter release is current on the day CI happens to run, which
+      # silently changes `dart format`'s output style (see the tall-style
+      # formatter break fixed in this same commit) and can flip analyzer
+      # rules underneath you. Bump this deliberately, in step with the
+      # Flutter SDK developers actually run locally, not passively.
       - uses: subosito/flutter-action@v2
         with:
-          channel: stable
+          flutter-version: '3.47.0'
           cache: true
 
       - name: Install dependencies

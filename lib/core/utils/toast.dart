@@ -61,7 +61,8 @@ class _ToastCard extends StatefulWidget {
   State<_ToastCard> createState() => _ToastCardState();
 }
 
-class _ToastCardState extends State<_ToastCard> with SingleTickerProviderStateMixin {
+class _ToastCardState extends State<_ToastCard>
+    with SingleTickerProviderStateMixin {
   late final AnimationController _controller;
   Timer? _holdTimer;
 
@@ -89,12 +90,24 @@ class _ToastCardState extends State<_ToastCard> with SingleTickerProviderStateMi
   }
 
   _ToastMeta _meta(ToastType type) => switch (type) {
-        ToastType.success => const _ToastMeta(Icons.verified_rounded, AppPalette.verified),
-        ToastType.info => const _ToastMeta(Icons.info_rounded, AppPalette.candyBlue),
-        ToastType.warning => const _ToastMeta(Icons.warning_amber_rounded, Color(0xFFF2B84B)),
-        ToastType.error => const _ToastMeta(Icons.error_rounded, AppPalette.danger),
-        ToastType.locked => const _ToastMeta(Icons.lock_rounded, AppPalette.steelBlue),
-      };
+    ToastType.success => const _ToastMeta(
+      Icons.verified_rounded,
+      AppPalette.verified,
+    ),
+    ToastType.info => const _ToastMeta(
+      Icons.info_rounded,
+      AppPalette.candyBlue,
+    ),
+    ToastType.warning => const _ToastMeta(
+      Icons.warning_amber_rounded,
+      Color(0xFFF2B84B),
+    ),
+    ToastType.error => const _ToastMeta(Icons.error_rounded, AppPalette.danger),
+    ToastType.locked => const _ToastMeta(
+      Icons.lock_rounded,
+      AppPalette.steelBlue,
+    ),
+  };
 
   @override
   Widget build(BuildContext context) {
@@ -106,10 +119,10 @@ class _ToastCardState extends State<_ToastCard> with SingleTickerProviderStateMi
       left: 16,
       right: 16,
       child: SlideTransition(
-        position: Tween<Offset>(
-          begin: const Offset(0, -1.4),
-          end: Offset.zero,
-        ).animate(CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic)),
+        position: Tween<Offset>(begin: const Offset(0, -1.4), end: Offset.zero)
+            .animate(
+              CurvedAnimation(parent: _controller, curve: Curves.easeOutCubic),
+            ),
         child: FadeTransition(
           opacity: _controller,
           child: GestureDetector(
@@ -117,7 +130,10 @@ class _ToastCardState extends State<_ToastCard> with SingleTickerProviderStateMi
             child: Material(
               color: Colors.transparent,
               child: Container(
-                padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 14,
+                  vertical: 12,
+                ),
                 decoration: BoxDecoration(
                   color: AppPalette.card.withValues(alpha: 0.96),
                   borderRadius: BorderRadius.circular(16),
@@ -161,4 +177,4 @@ class _ToastCardState extends State<_ToastCard> with SingleTickerProviderStateMi
       ),
     );
   }
-} 
+}

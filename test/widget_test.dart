@@ -10,7 +10,20 @@ void main() {
     await tester.pumpWidget(
       const ProviderScope(child: ProfessionalConnectionsApp()),
     );
-    
+
+    // LandingPage (OrbitingIntents) and SplashScreen (CircularProgressIndicator)
+    // both run indefinitely-repeating animations, so pumpAndSettle would never
+    // converge here — advance time with bounded pumps instead.
+
+    // SplashScreen waits 2s before navigating to LandingPage.
+    await tester.pump(const Duration(seconds: 3));
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // LandingPage requires tapping "GET STARTED" to reach OnboardingFlow.
+    await tester.tap(find.text('GET STARTED'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
     // Verify that the onboarding welcome screen builds without crashing.
     expect(find.text('CONTINUE'), findsOneWidget);
   });

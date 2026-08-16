@@ -13,11 +13,41 @@ abstract interface class MatchingService {
 
 class MockMatchingService implements MatchingService {
   static const List<MatchProfile> _catalog = [
-    MatchProfile(id: 'u1', name: 'Nimal Perera', role: 'Software Engineer', intent: IntentType.coffee, distanceKm: 1.2),
-    MatchProfile(id: 'u2', name: 'Sachini Fernando', role: 'Product Manager', intent: IntentType.networking, distanceKm: 2.5),
-    MatchProfile(id: 'u3', name: 'Kasun Silva', role: 'Founder', intent: IntentType.mentorship, distanceKm: 3.1),
-    MatchProfile(id: 'u4', name: 'Amaya Wickrama', role: 'Data Scientist', intent: IntentType.lunch, distanceKm: 1.8),
-    MatchProfile(id: 'u5', name: 'Ruwan Jayasuriya', role: 'UX Designer', intent: IntentType.coffee, distanceKm: 4.2),
+    MatchProfile(
+      id: 'u1',
+      name: 'Nimal Perera',
+      role: 'Software Engineer',
+      intent: IntentType.coffee,
+      distanceKm: 1.2,
+    ),
+    MatchProfile(
+      id: 'u2',
+      name: 'Sachini Fernando',
+      role: 'Product Manager',
+      intent: IntentType.networking,
+      distanceKm: 2.5,
+    ),
+    MatchProfile(
+      id: 'u3',
+      name: 'Kasun Silva',
+      role: 'Founder',
+      intent: IntentType.mentorship,
+      distanceKm: 3.1,
+    ),
+    MatchProfile(
+      id: 'u4',
+      name: 'Amaya Wickrama',
+      role: 'Data Scientist',
+      intent: IntentType.lunch,
+      distanceKm: 1.8,
+    ),
+    MatchProfile(
+      id: 'u5',
+      name: 'Ruwan Jayasuriya',
+      role: 'UX Designer',
+      intent: IntentType.coffee,
+      distanceKm: 4.2,
+    ),
   ];
 
   @override

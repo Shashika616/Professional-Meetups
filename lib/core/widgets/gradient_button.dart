@@ -73,7 +73,9 @@ class _GradientButtonState extends State<GradientButton> {
               boxShadow: [
                 BoxShadow(
                   // Shadow expands and drops further when pressed to simulate lifting
-                  color: AppPalette.candyBlue.withValues(alpha: _isPressed ? 0.55 : 0.25),
+                  color: AppPalette.candyBlue.withValues(
+                    alpha: _isPressed ? 0.55 : 0.25,
+                  ),
                   blurRadius: _isPressed ? 36 : 20,
                   offset: Offset(0, _isPressed ? 16 : 8),
                 ),
@@ -83,7 +85,8 @@ class _GradientButtonState extends State<GradientButton> {
               borderRadius: BorderRadius.circular(borderRadius),
               onTap: isEnabled ? widget.onPressed : null,
               child: Container(
-                width: double.infinity, // Forces the gradient to fill the whole width
+                width: double
+                    .infinity, // Forces the gradient to fill the whole width
                 height: widget.height,
                 alignment: Alignment.center,
                 padding: const EdgeInsets.symmetric(horizontal: 24),

@@ -22,16 +22,28 @@ class AvailabilitySearchBar extends StatelessWidget {
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
         child: Row(
           children: [
-            const Icon(Icons.search_rounded, color: AppPalette.candyBlue, size: 22),
+            const Icon(
+              Icons.search_rounded,
+              color: AppPalette.candyBlue,
+              size: 22,
+            ),
             const SizedBox(width: 12),
             Expanded(
               child: TextField(
                 controller: controller,
-                style: const TextStyle(color: AppPalette.textPrimary, fontSize: 14, fontWeight: FontWeight.w500),
+                style: const TextStyle(
+                  color: AppPalette.textPrimary,
+                  fontSize: 14,
+                  fontWeight: FontWeight.w500,
+                ),
                 decoration: const InputDecoration(
                   border: InputBorder.none,
                   hintText: 'Set availability or search location...',
-                  hintStyle: TextStyle(color: AppPalette.textSecondary, fontSize: 14, fontWeight: FontWeight.w400),
+                  hintStyle: TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w400,
+                  ),
                 ),
               ),
             ),
@@ -39,7 +51,11 @@ class AvailabilitySearchBar extends StatelessWidget {
             const SizedBox(width: 4),
             IconButton(
               onPressed: onFilterTap,
-              icon: const Icon(Icons.tune_rounded, color: AppPalette.textSecondary, size: 20),
+              icon: const Icon(
+                Icons.tune_rounded,
+                color: AppPalette.textSecondary,
+                size: 20,
+              ),
               splashRadius: 18,
             ),
           ],

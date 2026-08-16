@@ -12,7 +12,7 @@ class Glass extends StatelessWidget {
     this.padding,
     this.tint,
     this.border,
-    this.blur = 10, 
+    this.blur = 10,
   });
 
   final Widget child;
@@ -34,7 +34,10 @@ class Glass extends StatelessWidget {
             decoration: BoxDecoration(
               borderRadius: BorderRadius.circular(radius),
               color: tint ?? AppPalette.glassTint,
-              border: Border.all(color: border ?? AppPalette.glassBorder, width: 1),
+              border: Border.all(
+                color: border ?? AppPalette.glassBorder,
+                width: 1,
+              ),
             ),
             child: child,
           ),
