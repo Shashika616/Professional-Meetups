@@ -1,0 +1,11 @@
+# See backend/PLAN.md Step 6. Minimum required set — errcheck, staticcheck,
+# govet, ineffassign — explicitly listed even though some are already
+# golangci-lint v2 defaults, so this file stays the source of truth if that
+# default set ever changes upstream.
+version: "2"
+linters:
+  enable:
+    - errcheck
+    - staticcheck
+    - govet
+    - ineffassign

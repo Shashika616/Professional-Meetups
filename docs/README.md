@@ -11,7 +11,7 @@ This vault is the **product and architecture knowledge base** for the Profession
 - **03 - Architecture** — [System Architecture](03-architecture/system-architecture.md), [Threat Model](03-architecture/threat-model.md), [Trust & Safety Architecture](03-architecture/trust-and-safety-architecture.md), [Safety Features Catalog](03-architecture/safety-features-catalog.md), [Privacy & Anti-Abuse Controls](03-architecture/privacy-and-anti-abuse-controls.md), [Operations & Incident Response](03-architecture/operations-and-incident-response.md). How we're building it, and how we defend it.
 - **04 - Decisions** — [ADR-001](04-decisions/adr-001-verified-real-world-professional-networking.md) through [ADR-011](04-decisions/adr-011-linkedin-onboarding-slice-design.md). Why we chose what we chose, so nobody re-litigates it three weeks later.
 - **05 - UX** — [Safety UX Flows](05-ux/safety-ux-flows.md). The moment-by-moment flows for the riskiest parts of the product.
-- **06 - Roadmap** — [Roadmap](06-roadmap/roadmap.md). What's next, phased by risk.
+- **06 - Roadmap** — [Roadmap](06-roadmap/roadmap.md), [Feature Build Plan Template](06-roadmap/feature-build-plan-template.md). What's next, phased by risk, and the standard shape every backend feature slice gets built from.
 - **07 - Research** — [Sri Lanka PDPA - Work Email Verification](07-research/sri-lanka-pdpa-work-email-verification.md), [Sources & Citations](07-research/sources-and-citations.md). External facts backing the above.
 
 ## Authority model

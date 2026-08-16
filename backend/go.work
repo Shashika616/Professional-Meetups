@@ -4,14 +4,10 @@
 // go.mod and builds into its own independent binary/image — this file only
 // affects the local dev toolchain, it has no effect on production builds.
 //
-// NOTE for whoever runs `go work init` for real: the Go version below is a
-// conservative placeholder. Run `go version` after installing Go and bump
-// every go.mod + this directive to match the actual installed toolchain
-// rather than trusting this number — see backend/PLAN.md step 1.
-go 1.23
+go 1.26.6
 
 use (
-	./shared
-	./services/gateway
 	./services/auth
+	./services/gateway
+	./shared
 )

@@ -1,12 +1,15 @@
 # Same shape as services/gateway/Dockerfile — see the comments there. Build
 # context is `backend/` (see docker-compose.yml), not this folder.
 
-FROM golang:1.23-alpine AS build
+FROM golang:1.26.6-alpine AS build
 WORKDIR /workspace
 
 COPY go.work go.work.sum* ./
 COPY shared/go.mod shared/go.sum* ./shared/
 COPY services/auth/go.mod services/auth/go.sum* ./services/auth/
+# go.work lists all three modules, so `go work sync` needs every one of
+# their go.mod files present even though this image only builds auth.
+COPY services/gateway/go.mod services/gateway/go.sum* ./services/gateway/
 RUN go work sync
 
 COPY shared ./shared

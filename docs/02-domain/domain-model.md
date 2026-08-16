@@ -4,7 +4,11 @@ Core entities and how they relate. This is the vocabulary every other document a
 
 ## User
 
-A person with an account. Has a **Trust Level** (see [Trust Levels](trust-levels.md)) and a continuous **trust score** (see [Trust & Safety Architecture](../03-architecture/trust-and-safety-architecture.md) § Continuous Trust Score) derived from verification state and behavior. Has zero or more **Verifications** (see [Verification Model](verification-model.md)): LinkedIn (federated or claimed), phone, personal email, personal details, professional/work email, and — optionally — KYC/biometric.
+A person with an account. Has a **Trust Level** (see [Trust Levels](trust-levels.md)) and a continuous **trust score** (see [Trust & Safety Architecture](../03-architecture/trust-and-safety-architecture.md) § Continuous Trust Score) derived from verification state and behavior. Has zero or more **Verifications** (see [Verification Model](verification-model.md)): LinkedIn (federated or claimed), phone, personal email, personal details, professional/work email, and — optionally — KYC/biometric. Has zero or one active **Subscription** (see below). **Trust Level and Subscription are deliberately independent axes** — trust gates *what you're allowed to do* (safety), subscription gates *how much you can see / what convenience features you get* (monetization). Per the [Revenue Model](../01-product/revenue-model.md) guardrail, subscription must never buy trust: paying never grants a higher trust level, faster/skipped verification, or bypasses a trust-gated intent.
+
+## Subscription
+
+A User's paid-tier status: `free` / `premium` / `enterprise` (see [Revenue Model](../01-product/revenue-model.md)), plus status (`active`/`past_due`/`canceled`) and period dates. Modeled as its **own table with a foreign key to `users`**, not a boolean or enum column on the User record itself — the same reasoning as Verification being its own entity: a user's paid status changes independently of their identity record, can have its own history (upgrades, downgrades, billing events), and this shape is what lets a future paid tier (or per-feature entitlement, e.g. "search by company" as a standalone add-on) get added via a new row/table rather than a `users` schema migration. **Not yet built** — out of scope for the current LinkedIn-onboarding slice ([ADR-011](../04-decisions/adr-011-linkedin-onboarding-slice-design.md)), which intentionally ships only the columns Level 1a needs. Build this when Premium-tier work actually starts, not speculatively now.
 
 ## Company
 
@@ -39,6 +43,7 @@ An emergency contact a User can optionally designate to automatically receive me
 ```
 User ──has──> Trust Level, trust score
 User ──has many──> Verification (LinkedIn federated/claimed, phone, personal email, personal details, work email, KYC)
+User ──has zero-or-one active──> Subscription (tier, status — independent of Trust Level)
 User ──resolves work email to──> Company (company_domain only, not raw email)
 User ──selects──> Intent
 Intent + Intent ──(compatibility engine)──> Match

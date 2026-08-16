@@ -6,7 +6,7 @@
 # `context: .` for this service), not this service's own folder, because the
 # module needs access to ../../shared via the go.work workspace.
 
-FROM golang:1.23-alpine AS build
+FROM golang:1.26.6-alpine AS build
 WORKDIR /workspace
 
 # Copy the whole workspace (shared + all services' go.mod/go.sum) before
@@ -15,6 +15,9 @@ WORKDIR /workspace
 COPY go.work go.work.sum* ./
 COPY shared/go.mod shared/go.sum* ./shared/
 COPY services/gateway/go.mod services/gateway/go.sum* ./services/gateway/
+# go.work lists all three modules, so `go work sync` needs every one of
+# their go.mod files present even though this image only builds gateway.
+COPY services/auth/go.mod services/auth/go.sum* ./services/auth/
 RUN go work sync
 
 COPY shared ./shared
