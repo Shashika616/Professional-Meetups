@@ -1,0 +1,13 @@
+# Local secrets — never commit real keys or credentials.
+.env
+secrets/
+
+# Go build artifacts.
+bin/
+*.test
+*.out
+
+# Generated protobuf/gRPC code is committed (see PLAN.md) so the repo builds
+# without requiring `buf generate` first — but stray local regen artifacts
+# outside the tracked proto output dirs should still be ignored:
+*.pb.go.orig
