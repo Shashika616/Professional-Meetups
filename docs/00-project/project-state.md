@@ -21,6 +21,7 @@
 - Backend platform architecture decided and recorded: Go microservices on Cloud Run, custom gateway (behind a Google Load Balancer for TLS), gRPC for interservice calls, GCP Pub/Sub for eventing (not Kafka — Cloud Run can't host a persistent consumer), a dedicated Realtime Gateway service for WebSocket fan-out, and Cloud Run IAM invoker auth instead of a self-managed mTLS mesh ([ADR-008](../04-decisions/adr-008-backend-platform-architecture.md)).
 - Auth strategy decided and recorded: RS256 JWT (asymmetric — only the auth service holds the private key), refresh-token rotation with replay detection, mobile secure-storage (Keychain/Keystore) vs. web httpOnly-cookie token storage split by client type, staff/admin auth kept fully separate from consumer auth ([ADR-009](../04-decisions/adr-009-jwt-auth-strategy.md)).
 - Profile-visibility simplified: no user-managed public/private toggle; instead, how much of another user's profile you can see depends on your own subscription tier (free = limited card, paid = full profile) — folded into [Revenue Model](../01-product/revenue-model.md). Existing anti-stalking behavioral controls (rate-limited search, hide-from-company/industry) are unaffected and still apply.
+- Database hosting decided: Cloud SQL for PostgreSQL (Enterprise edition, shared-core tier, single-zone to start, backups + PITR from day one), not AlloyDB (premium not justified yet), not self-hosted ([ADR-010](../04-decisions/adr-010-postgresql-hosting-on-cloud-sql.md)). Cloud Run connects via the Cloud SQL Auth Proxy.
 
 ## Currently working on
 
@@ -35,6 +36,20 @@
 - **Company allowlist ownership**: who manually curates/maintains the initial approved-company database (see [Verification Model](../02-domain/verification-model.md) § Company Verification Database)? Not yet assigned.
 - **iOS permission strings**: `ios/Runner/Info.plist` has no usage-description keys yet (no location/camera plugins wired in yet). Needs `NSLocationWhenInUseUsageDescription`, `NSCameraUsageDescription`, etc. added — alongside the equivalent Android manifest permissions — before, not during, the SOS/live-location/KYC build-out. See [ADR-007](../04-decisions/adr-007-flutter-as-the-cross-platform-frontend.md).
 - **GCP lock-in acknowledgment**: [ADR-008](../04-decisions/adr-008-backend-platform-architecture.md) commits Pub/Sub, Cloud Run IAM, and Cloud Run ingress specifically — worth a conscious "yes, we're fine with this" rather than discovering it as a surprise later if a multi-cloud need ever comes up.
+- **Deployment region**: Mumbai (asia-south1) vs. Singapore (asia-southeast1) for Cloud Run + Cloud SQL, given the Sri Lanka launch and NFR-001's <200ms matching requirement. Not chosen — a real latency test would help decide.
+- **RPO/RTO targets for Postgres**: [ADR-010](../04-decisions/adr-010-postgresql-hosting-on-cloud-sql.md) turns on backups/PITR, but that's not the same as an agreed recovery-point/recovery-time objective — needs an explicit business decision on acceptable data-loss/downtime windows, not just "backups are on."
+
+## Backend platform — open technical items (tracked 2026-08-16, not yet decided or built)
+
+These don't block starting the onboarding slice, but they're real gaps for a production app and shouldn't be discovered piecemeal later. None of this is silently assumed — it's tracked here on purpose.
+
+- **Secrets management**: where the JWT private signing key ([ADR-009](../04-decisions/adr-009-jwt-auth-strategy.md)), LinkedIn OAuth client secret, and DB credentials actually live. GCP Secret Manager is the assumed answer but hasn't been decided or configured.
+- **Backend CI/CD**: nothing yet builds a Go service, pushes an image, and deploys it to Cloud Run. The only CI that exists is the Flutter frontend's (`.github/workflows/flutter-ci.yml`).
+- **Rate limiting / WAF**: the gateway is supposed to do rate limiting ([ADR-008](../04-decisions/adr-008-backend-platform-architecture.md)) but the algorithm and policy (per-IP vs. per-user vs. per-endpoint) aren't designed, and Cloud Armor hasn't been decided on.
+- **Infra/AppSec threat coverage**: [Threat Model](../03-architecture/threat-model.md) covers *product* threats (fake profiles, scams, romance fraud) — it says nothing about container image vulnerabilities, dependency CVEs, or IAM misconfiguration. That's a distinct, currently uncovered category, separate from the product threat model and not yet started.
+- **Backend test strategy**: no decision yet on unit/integration/contract testing across the gRPC services.
+- **Cost monitoring**: no GCP budget alerts configured — worth doing given cost-avoidance was the whole reason for choosing GCP over AWS in the first place.
+- **Realtime Gateway connection-registry design**: [ADR-008](../04-decisions/adr-008-backend-platform-architecture.md) establishes a dedicated Realtime Gateway service for WebSocket fan-out, but the actual mechanism for routing a Pub/Sub message to the *specific* gateway instance holding a given user's socket (e.g. a Redis-backed `user_id → instance_id` registry) isn't designed yet — only the general shape.
 
 ## Next
 
@@ -53,3 +68,4 @@
 - **2026-08-16** — iOS platform support confirmed in the repo (Xcode/`flutter create` scaffolding, `macos` folder appeared incidentally); recorded as [ADR-007](../04-decisions/adr-007-flutter-as-the-cross-platform-frontend.md); updated [System Architecture](../03-architecture/system-architecture.md), repo `CLAUDE.md`, and this note accordingly.
 - **2026-08-16** — Made the vault→repo docs sync a permanent committed script instead of an ephemeral one-off.
 - **2026-08-16** — Backend platform ([ADR-008](../04-decisions/adr-008-backend-platform-architecture.md)) and JWT auth strategy ([ADR-009](../04-decisions/adr-009-jwt-auth-strategy.md)) decided; profile-visibility simplified into a subscription-tier rule ([Revenue Model](../01-product/revenue-model.md)) instead of a public/private toggle; account-deletion retention tension flagged as an open item.
+- **2026-08-16** — Database hosting decided (Cloud SQL for PostgreSQL, [ADR-010](../04-decisions/adr-010-postgresql-hosting-on-cloud-sql.md)); full backend production-readiness gap list written up and tracked (secrets management, backend CI/CD, deployment region, RPO/RTO, rate limiting/WAF, infra/AppSec threat coverage, backend test strategy, cost monitoring, realtime connection-registry design) instead of left implicit.
