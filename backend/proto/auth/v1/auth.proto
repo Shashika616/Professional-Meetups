@@ -1,0 +1,51 @@
+syntax = "proto3";
+
+package auth.v1;
+
+option go_package = "github.com/professional-connections/backend/shared/proto/auth/v1;authv1";
+
+// AuthService is called only by the gateway, over gRPC, inside the private
+// Cloud Run network (ADR-008). It is never exposed directly to clients — the
+// gateway translates the public REST API into these calls. See
+// backend/PLAN.md for the REST contract the gateway exposes.
+service AuthService {
+  // Exchanges a LinkedIn OIDC authorization code (obtained via the PKCE flow
+  // the mobile app runs) for a Professional Connections session. Creates the
+  // user record on first login. See docs/04-decisions/adr-011 for why PKCE.
+  rpc CompleteLinkedInOnboarding(CompleteLinkedInOnboardingRequest) returns (SessionResponse);
+
+  // Rotates a refresh token for a new access/refresh token pair. The
+  // presented refresh token is invalidated as part of this call, whether or
+  // not it was already valid — see ADR-009 on rotation-as-theft-detection.
+  rpc RefreshSession(RefreshSessionRequest) returns (SessionResponse);
+
+  // Revokes a refresh token (logout). Idempotent — revoking an
+  // already-revoked or unknown token is not an error.
+  rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+}
+
+message CompleteLinkedInOnboardingRequest {
+  string authorization_code = 1;
+  string redirect_uri = 2;   // must exactly match the URI used to start the flow
+  string pkce_verifier = 3;  // the PKCE code_verifier the app generated; never transmitted before this point
+}
+
+message SessionResponse {
+  string user_id = 1;
+  string access_token = 2;
+  string refresh_token = 3;
+  int64 access_token_expires_in_seconds = 4;
+  bool is_new_user = 5;
+}
+
+message RefreshSessionRequest {
+  string refresh_token = 1;
+}
+
+message RevokeSessionRequest {
+  string refresh_token = 1;
+}
+
+message RevokeSessionResponse {
+  bool success = 1;
+}

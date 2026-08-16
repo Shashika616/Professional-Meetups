@@ -9,6 +9,12 @@ on:
 jobs:
   analyze-and-test:
     runs-on: ubuntu-latest
+    # Flutter project root moved to frontend/ when the repo split into
+    # frontend/ + backend/ (2026-08-16) — every `run:` step below now
+    # executes from there by default instead of the repo root.
+    defaults:
+      run:
+        working-directory: frontend
     steps:
       - uses: actions/checkout@v4
 
@@ -39,4 +45,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: coverage-report
-          path: coverage/lcov.info
+          # `uses:` steps ignore the job-level `defaults.run.working-directory`
+          # (that only applies to `run:` steps) so this path needs the
+          # frontend/ prefix explicitly.
+          path: frontend/coverage/lcov.info

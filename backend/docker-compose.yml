@@ -1,0 +1,109 @@
+name: professional-connections-backend
+
+# Local development stack. Mirrors production shape (ADR-008, ADR-010) without
+# needing anything installed on the host beyond Docker Desktop: Postgres and
+# Redis stand in for Cloud SQL and Memorystore, the Pub/Sub emulator stands in
+# for real GCP Pub/Sub. Nothing here is a production deployment manifest —
+# Cloud Run deployment is a separate concern (see backend/PLAN.md).
+
+services:
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-app}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-app}
+      POSTGRES_DB: ${POSTGRES_DB:-professional_connections}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-app} -d ${POSTGRES_DB:-professional_connections}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  # Local stand-in for GCP Pub/Sub. Real Pub/Sub is used in production (ADR-008);
+  # this emulator speaks the same wire protocol so the Go Pub/Sub client code
+  # doesn't need a local/prod branch.
+  pubsub-emulator:
+    image: gcr.io/google.com/cloudsdktool/cloud-sdk:emulators
+    restart: unless-stopped
+    command: gcloud beta emulators pubsub start --host-port=0.0.0.0:8085 --project=${GCP_PROJECT_ID:-local-dev}
+    ports:
+      - "8085:8085"
+
+  # One-shot: applies SQL migrations against postgres, then exits. Re-run any
+  # time with `docker compose run --rm migrate`. See backend/PLAN.md for how
+  # migration files are named/ordered.
+  migrate:
+    image: migrate/migrate:v4.17.1
+    depends_on:
+      postgres:
+        condition: service_healthy
+    volumes:
+      - ./db/migrations:/migrations
+    command:
+      - "-path=/migrations"
+      - "-database=postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-professional_connections}?sslmode=disable"
+      - "up"
+
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      auth:
+        condition: service_started
+    ports:
+      - "8080:8080"
+    environment:
+      PORT: 8080
+      AUTH_SERVICE_ADDR: auth:9090
+      REDIS_ADDR: redis:6379
+      JWT_PUBLIC_KEY_PATH: /secrets/jwt_public.pem
+    volumes:
+      - ./secrets:/secrets:ro
+
+  auth:
+    build:
+      context: .
+      dockerfile: services/auth/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pubsub-emulator:
+        condition: service_started
+    ports:
+      - "9090:9090" # gRPC — not exposed to the public gateway network in production, only opened here for local debugging
+    environment:
+      GRPC_PORT: 9090
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-professional_connections}?sslmode=disable
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-local-dev}
+      JWT_PRIVATE_KEY_PATH: /secrets/jwt_private.pem
+      LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID}
+      LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET}
+      LINKEDIN_REDIRECT_URI: ${LINKEDIN_REDIRECT_URI}
+    volumes:
+      - ./secrets:/secrets:ro
+
+volumes:
+  postgres-data:
+  redis-data:
