@@ -17,18 +17,18 @@ class IntentPickerSheet extends ConsumerWidget {
   final int trustLevel;
 
   static Future<void> show(BuildContext context, int trustLevel) {
-  return showModalBottomSheet<void>(
-    context: context,
-    backgroundColor: Colors.transparent,
-    barrierColor: AppPalette.onyx.withValues(alpha: 0.65),
-    isScrollControlled: true,
-    transitionAnimationController: AnimationController(
-      vsync: Navigator.of(context),
-      duration: const Duration(milliseconds: 300),
-    ),
-    builder: (context) => IntentPickerSheet(trustLevel: trustLevel),
-  );
-}
+    return showModalBottomSheet<void>(
+      context: context,
+      backgroundColor: Colors.transparent,
+      barrierColor: AppPalette.onyx.withValues(alpha: 0.65),
+      isScrollControlled: true,
+      transitionAnimationController: AnimationController(
+        vsync: Navigator.of(context),
+        duration: const Duration(milliseconds: 300),
+      ),
+      builder: (context) => IntentPickerSheet(trustLevel: trustLevel),
+    );
+  }
 
   @override
   Widget build(BuildContext context, WidgetRef ref) {
@@ -40,7 +40,12 @@ class IntentPickerSheet extends ConsumerWidget {
         filter: ImageFilter.blur(sigmaX: 20, sigmaY: 20),
         child: Container(
           color: AppPalette.surface.withValues(alpha: 0.88),
-          padding: EdgeInsets.fromLTRB(20, 12, 20, MediaQuery.of(context).padding.bottom + 24),
+          padding: EdgeInsets.fromLTRB(
+            20,
+            12,
+            20,
+            MediaQuery.of(context).padding.bottom + 24,
+          ),
           child: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -73,10 +78,15 @@ class IntentPickerSheet extends ConsumerWidget {
                       locked: !intent.isUnlockedFor(trustLevel),
                       onTap: () {
                         if (!intent.isUnlockedFor(trustLevel)) {
-                          showSnack(context, '${intent.label} requires Level ${intent.requiredTrustLevel} trust.', type: ToastType.locked);
+                          showSnack(
+                            context,
+                            '${intent.label} requires Level ${intent.requiredTrustLevel} trust.',
+                            type: ToastType.locked,
+                          );
                           return;
                         }
-                        ref.read(selectedIntentProvider.notifier).state = intent;
+                        ref.read(selectedIntentProvider.notifier).state =
+                            intent;
                         Navigator.of(context).pop();
                       },
                     ),

@@ -22,46 +22,77 @@ class ProfilePage extends StatelessWidget {
             const SizedBox(height: 22),
             _statsRow(),
             const SizedBox(height: 28),
-            _section('VERIFICATION', children: [
-              _Row(
-                icon: Icons.phone_android,
-                title: 'Phone',
-                subtitle: 'Not verified',
-                trailing: _verifyChip(context, 'Phone'),
-              ),
-              const _Divider(),
-              _Row(icon: Icons.work_outline, title: 'LinkedIn', subtitle: 'Not connected', trailing: _verifyChip(context, 'LinkedIn')),
-              const _Divider(),
-              _Row(icon: Icons.email_outlined, title: 'Work Email', subtitle: 'Not verified', trailing: _verifyChip(context, 'Work email')),
-            ]),
+            _section(
+              'VERIFICATION',
+              children: [
+                _Row(
+                  icon: Icons.phone_android,
+                  title: 'Phone',
+                  subtitle: 'Not verified',
+                  trailing: _verifyChip(context, 'Phone'),
+                ),
+                const _Divider(),
+                _Row(
+                  icon: Icons.work_outline,
+                  title: 'LinkedIn',
+                  subtitle: 'Not connected',
+                  trailing: _verifyChip(context, 'LinkedIn'),
+                ),
+                const _Divider(),
+                _Row(
+                  icon: Icons.email_outlined,
+                  title: 'Work Email',
+                  subtitle: 'Not verified',
+                  trailing: _verifyChip(context, 'Work email'),
+                ),
+              ],
+            ),
             const SizedBox(height: 24),
-            _section('PREFERENCES', children: const [
-              _Row(
-                icon: Icons.lock_outline,
-                title: 'Privacy Controls',
-                subtitle: 'Visibility and location',
-                trailing: Icon(Icons.chevron_right_rounded, size: 18, color: AppPalette.textSecondary),
-              ),
-              _Divider(),
-              _Row(
-                icon: Icons.notifications_none_rounded,
-                title: 'Notifications',
-                subtitle: 'Push and email alerts',
-                trailing: Icon(Icons.chevron_right_rounded, size: 18, color: AppPalette.textSecondary),
-              ),
-              _Divider(),
-              _Row(
-                icon: Icons.shield_outlined,
-                title: 'Safety Center',
-                subtitle: 'Trusted contacts and SOS',
-                trailing: Icon(Icons.chevron_right_rounded, size: 18, color: AppPalette.textSecondary),
-              ),
-            ]),
+            _section(
+              'PREFERENCES',
+              children: const [
+                _Row(
+                  icon: Icons.lock_outline,
+                  title: 'Privacy Controls',
+                  subtitle: 'Visibility and location',
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: AppPalette.textSecondary,
+                  ),
+                ),
+                _Divider(),
+                _Row(
+                  icon: Icons.notifications_none_rounded,
+                  title: 'Notifications',
+                  subtitle: 'Push and email alerts',
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: AppPalette.textSecondary,
+                  ),
+                ),
+                _Divider(),
+                _Row(
+                  icon: Icons.shield_outlined,
+                  title: 'Safety Center',
+                  subtitle: 'Trusted contacts and SOS',
+                  trailing: Icon(
+                    Icons.chevron_right_rounded,
+                    size: 18,
+                    color: AppPalette.textSecondary,
+                  ),
+                ),
+              ],
+            ),
             const SizedBox(height: 24),
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: GestureDetector(
-                onTap: () => showSnack(context, 'Sign out will be wired to the auth service.'),
+                onTap: () => showSnack(
+                  context,
+                  'Sign out will be wired to the auth service.',
+                ),
                 child: Glass(
                   radius: 16,
                   tint: AppPalette.danger.withValues(alpha: 0.08),
@@ -70,7 +101,12 @@ class ProfilePage extends StatelessWidget {
                   child: const Center(
                     child: Text(
                       'SIGN OUT',
-                      style: TextStyle(fontSize: 11, letterSpacing: 1.8, fontWeight: FontWeight.w800, color: AppPalette.danger),
+                      style: TextStyle(
+                        fontSize: 11,
+                        letterSpacing: 1.8,
+                        fontWeight: FontWeight.w800,
+                        color: AppPalette.danger,
+                      ),
                     ),
                   ),
                 ),
@@ -83,7 +119,7 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-    Widget _avatarBlock() {
+  Widget _avatarBlock() {
     return Center(
       child: Column(
         children: [
@@ -92,12 +128,20 @@ class ProfilePage extends StatelessWidget {
           const SizedBox(height: 14),
           const Text(
             'Shashika Fernando',
-            style: TextStyle(fontSize: 20, fontWeight: FontWeight.w800, color: AppPalette.textPrimary, letterSpacing: -0.3),
+            style: TextStyle(
+              fontSize: 20,
+              fontWeight: FontWeight.w800,
+              color: AppPalette.textPrimary,
+              letterSpacing: -0.3,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
             'SWE • Colombo',
-            style: TextStyle(fontSize: 12, color: AppPalette.textSecondary.withValues(alpha: 0.9)),
+            style: TextStyle(
+              fontSize: 12,
+              color: AppPalette.textSecondary.withValues(alpha: 0.9),
+            ),
           ),
         ],
       ),
@@ -109,11 +153,17 @@ class ProfilePage extends StatelessWidget {
       padding: EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
-          Expanded(child: _StatChip(value: '12', label: 'MEETUPS')),
+          Expanded(
+            child: _StatChip(value: '12', label: 'MEETUPS'),
+          ),
           SizedBox(width: 12),
-          Expanded(child: _StatChip(value: '4.9', label: 'RATING')),
+          Expanded(
+            child: _StatChip(value: '4.9', label: 'RATING'),
+          ),
           SizedBox(width: 12),
-          Expanded(child: _StatChip(value: 'L1', label: 'TRUST')),
+          Expanded(
+            child: _StatChip(value: 'L1', label: 'TRUST'),
+          ),
         ],
       ),
     );
@@ -139,16 +189,24 @@ class ProfilePage extends StatelessWidget {
 
   Widget _verifyChip(BuildContext context, String name) {
     return GestureDetector(
-      onTap: () => showSnack(context, '$name verification flow will be built next.'),
+      onTap: () =>
+          showSnack(context, '$name verification flow will be built next.'),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(
           borderRadius: BorderRadius.circular(14),
-          border: Border.all(color: AppPalette.candyBlue.withValues(alpha: 0.5)),
+          border: Border.all(
+            color: AppPalette.candyBlue.withValues(alpha: 0.5),
+          ),
         ),
         child: const Text(
           'VERIFY',
-          style: TextStyle(fontSize: 8, letterSpacing: 1.4, fontWeight: FontWeight.w800, color: AppPalette.candyBlue),
+          style: TextStyle(
+            fontSize: 8,
+            letterSpacing: 1.4,
+            fontWeight: FontWeight.w800,
+            color: AppPalette.candyBlue,
+          ),
         ),
       ),
     );
@@ -168,11 +226,23 @@ class _StatChip extends StatelessWidget {
       padding: const EdgeInsets.symmetric(vertical: 12),
       child: Column(
         children: [
-          Text(value, style: const TextStyle(color: AppPalette.candyBlue, fontWeight: FontWeight.w800, fontSize: 16)),
+          Text(
+            value,
+            style: const TextStyle(
+              color: AppPalette.candyBlue,
+              fontWeight: FontWeight.w800,
+              fontSize: 16,
+            ),
+          ),
           const SizedBox(height: 2),
           Text(
             label,
-            style: const TextStyle(fontSize: 7, letterSpacing: 1.4, color: AppPalette.textSecondary, fontWeight: FontWeight.w700),
+            style: const TextStyle(
+              fontSize: 7,
+              letterSpacing: 1.4,
+              color: AppPalette.textSecondary,
+              fontWeight: FontWeight.w700,
+            ),
           ),
         ],
       ),
@@ -212,9 +282,22 @@ class _Row extends StatelessWidget {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                Text(title, style: const TextStyle(color: AppPalette.textPrimary, fontSize: 13, fontWeight: FontWeight.w600)),
+                Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppPalette.textPrimary,
+                    fontSize: 13,
+                    fontWeight: FontWeight.w600,
+                  ),
+                ),
                 const SizedBox(height: 2),
-                Text(subtitle, style: const TextStyle(color: AppPalette.textSecondary, fontSize: 11)),
+                Text(
+                  subtitle,
+                  style: const TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontSize: 11,
+                  ),
+                ),
               ],
             ),
           ),

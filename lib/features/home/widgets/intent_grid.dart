@@ -17,8 +17,13 @@ class IntentGrid extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final selected = ref.watch(selectedIntentProvider);
-    final unlocked = IntentType.values.where((intent) => intent.isUnlockedFor(trustLevel)).toList();
-    final visible = <IntentType>[selected, ...unlocked.where((intent) => intent != selected)].take(3).toList();
+    final unlocked = IntentType.values
+        .where((intent) => intent.isUnlockedFor(trustLevel))
+        .toList();
+    final visible = <IntentType>[
+      selected,
+      ...unlocked.where((intent) => intent != selected),
+    ].take(3).toList();
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -43,9 +48,12 @@ class IntentGrid extends ConsumerWidget {
                   intent: intent,
                   selected: intent == selected,
                   locked: false,
-                  onTap: () => ref.read(selectedIntentProvider.notifier).state = intent,
+                  onTap: () =>
+                      ref.read(selectedIntentProvider.notifier).state = intent,
                 ),
-              _MoreTile(onTap: () => IntentPickerSheet.show(context, trustLevel)),
+              _MoreTile(
+                onTap: () => IntentPickerSheet.show(context, trustLevel),
+              ),
             ],
           ),
         ),
@@ -73,7 +81,12 @@ class _MoreTile extends StatelessWidget {
             SizedBox(width: 8),
             Text(
               'MORE',
-              style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, letterSpacing: 1.4, color: AppPalette.textPrimary),
+              style: TextStyle(
+                fontSize: 11,
+                fontWeight: FontWeight.w800,
+                letterSpacing: 1.4,
+                color: AppPalette.textPrimary,
+              ),
             ),
           ],
         ),

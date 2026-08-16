@@ -83,7 +83,7 @@ class _OrbitingIntentsState extends State<OrbitingIntents>
   Widget _buildOrbitChip(double angle, IntentType intent) {
     final double sinAngle = sin(angle);
     final double cosAngle = cos(angle);
-    
+
     // depth: 0 = behind (top), 1 = in front (bottom)
     final double depth = (sinAngle + 1) / 2;
     final double x = _centerX + cosAngle * _radiusX;

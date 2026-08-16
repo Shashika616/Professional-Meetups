@@ -4,11 +4,7 @@ import 'package:professional_connections_platform/core/theme/app_palette.dart';
 import 'package:professional_connections_platform/core/widgets/glass.dart';
 
 class GlassBottomBar extends StatelessWidget {
-  const GlassBottomBar({
-    super.key,
-    required this.index,
-    required this.onTap,
-  });
+  const GlassBottomBar({super.key, required this.index, required this.onTap});
 
   final int index;
   final ValueChanged<int> onTap;
@@ -44,7 +40,9 @@ class GlassBottomBar extends StatelessWidget {
                       Icon(
                         selected ? item.activeIcon : item.icon,
                         size: 21,
-                        color: selected ? AppPalette.candyBlue : AppPalette.textSecondary,
+                        color: selected
+                            ? AppPalette.candyBlue
+                            : AppPalette.textSecondary,
                       ),
                       const SizedBox(height: 4),
                       Text(
@@ -53,7 +51,9 @@ class GlassBottomBar extends StatelessWidget {
                           fontSize: 8,
                           letterSpacing: 1.4,
                           fontWeight: FontWeight.w600,
-                          color: selected ? AppPalette.candyBlue : AppPalette.textSecondary,
+                          color: selected
+                              ? AppPalette.candyBlue
+                              : AppPalette.textSecondary,
                         ),
                       ),
                     ],

@@ -25,13 +25,21 @@ class ChatsPage extends StatelessWidget {
                 Text(
                   'CHAT UNLOCKS AFTER A MUTUAL MEETUP',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppPalette.textPrimary, fontSize: 12, letterSpacing: 1.6, fontWeight: FontWeight.w700),
+                  style: TextStyle(
+                    color: AppPalette.textPrimary,
+                    fontSize: 12,
+                    letterSpacing: 1.6,
+                    fontWeight: FontWeight.w700,
+                  ),
                 ),
                 SizedBox(height: 8),
                 Text(
                   'Messages stay inside the app until both professionals agree to connect.',
                   textAlign: TextAlign.center,
-                  style: TextStyle(color: AppPalette.textSecondary, fontSize: 12),
+                  style: TextStyle(
+                    color: AppPalette.textSecondary,
+                    fontSize: 12,
+                  ),
                 ),
               ],
             ),

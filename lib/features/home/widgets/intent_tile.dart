@@ -37,7 +37,11 @@ class IntentTile extends StatelessWidget {
                     : Colors.white.withValues(alpha: 0.05),
                 borderRadius: BorderRadius.circular(10),
               ),
-              child: Icon(intent.icon, size: 20, color: locked ? AppPalette.textSecondary : AppPalette.candyBlue),
+              child: Icon(
+                intent.icon,
+                size: 20,
+                color: locked ? AppPalette.textSecondary : AppPalette.candyBlue,
+              ),
             ),
             const SizedBox(width: 10),
             Expanded(
@@ -51,7 +55,9 @@ class IntentTile extends StatelessWidget {
                       fontSize: 11,
                       fontWeight: FontWeight.w700,
                       letterSpacing: 0.6,
-                      color: locked ? AppPalette.textSecondary : AppPalette.textPrimary,
+                      color: locked
+                          ? AppPalette.textSecondary
+                          : AppPalette.textPrimary,
                     ),
                   ),
                   const SizedBox(height: 2),
@@ -64,14 +70,19 @@ class IntentTile extends StatelessWidget {
                       color: locked
                           ? AppPalette.danger.withValues(alpha: 0.8)
                           : selected
-                              ? AppPalette.candyBlue
-                              : AppPalette.verified,
+                          ? AppPalette.candyBlue
+                          : AppPalette.verified,
                     ),
                   ),
                 ],
               ),
             ),
-            if (selected) const Icon(Icons.check_circle, size: 16, color: AppPalette.candyBlue),
+            if (selected)
+              const Icon(
+                Icons.check_circle,
+                size: 16,
+                color: AppPalette.candyBlue,
+              ),
           ],
         ),
       ),

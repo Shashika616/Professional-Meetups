@@ -29,7 +29,11 @@ class MatchesPage extends ConsumerWidget {
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
-                const Icon(Icons.wifi_off_outlined, color: AppPalette.textSecondary, size: 28),
+                const Icon(
+                  Icons.wifi_off_outlined,
+                  color: AppPalette.textSecondary,
+                  size: 28,
+                ),
                 const SizedBox(height: 10),
                 const Text(
                   'Could not load matches.',
@@ -57,7 +61,8 @@ class MatchesPage extends ConsumerWidget {
           return ListView.builder(
             padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
             itemCount: page.items.length,
-            itemBuilder: (context, index) => _MatchCard(match: page.items[index]),
+            itemBuilder: (context, index) =>
+                _MatchCard(match: page.items[index]),
           );
         },
       ),
@@ -87,7 +92,10 @@ class _MatchCard extends StatelessWidget {
                   backgroundColor: AppPalette.deepBlue,
                   child: Text(
                     match.initials,
-                    style: const TextStyle(color: AppPalette.candyBlue, fontWeight: FontWeight.w700),
+                    style: const TextStyle(
+                      color: AppPalette.candyBlue,
+                      fontWeight: FontWeight.w700,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 12),
@@ -107,7 +115,10 @@ class _MatchCard extends StatelessWidget {
                       const SizedBox(height: 2),
                       Text(
                         match.role,
-                        style: const TextStyle(color: AppPalette.textSecondary, fontSize: 12),
+                        style: const TextStyle(
+                          color: AppPalette.textSecondary,
+                          fontSize: 12,
+                        ),
                       ),
                     ],
                   ),
@@ -237,9 +248,17 @@ class _MatchesSkeleton extends StatelessWidget {
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Container(height: 12, width: 120, color: const Color(0x14FFFFFF)),
+                        Container(
+                          height: 12,
+                          width: 120,
+                          color: const Color(0x14FFFFFF),
+                        ),
                         const SizedBox(height: 6),
-                        Container(height: 10, width: 80, color: const Color(0x0FFFFFFF)),
+                        Container(
+                          height: 10,
+                          width: 80,
+                          color: const Color(0x0FFFFFFF),
+                        ),
                       ],
                     ),
                   ),

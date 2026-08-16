@@ -6,12 +6,7 @@ import 'package:professional_connections_platform/core/theme/app_palette.dart';
 /// Renders as a rounded square (like a real app icon) at any size,
 /// with an optional candy blue glow for hero placements.
 class AppIcon extends StatelessWidget {
-  const AppIcon({
-    super.key,
-    this.size = 48,
-    this.radius,
-    this.glow = false,
-  });
+  const AppIcon({super.key, this.size = 48, this.radius, this.glow = false});
 
   final double size;
   final double? radius;

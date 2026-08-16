@@ -51,13 +51,27 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
             phoneNumber: _phoneController.text.trim(),
             code: _otpController.text.trim(),
           );
-          if (mounted) showSnack(context, 'Phone verified successfully.', type: ToastType.success);
+          if (mounted) {
+            showSnack(
+              context,
+              'Phone verified successfully.',
+              type: ToastType.success,
+            );
+          }
         case 2:
           await auth.connectLinkedIn(_linkedinController.text.trim());
-          if (mounted) showSnack(context, 'LinkedIn connected.', type: ToastType.success);
+          if (mounted) {
+            showSnack(context, 'LinkedIn connected.', type: ToastType.success);
+          }
         case 3:
           await auth.verifyCorporateEmail(_emailController.text.trim());
-          if (mounted) showSnack(context, 'Work email verified. Welcome aboard.', type: ToastType.success);
+          if (mounted) {
+            showSnack(
+              context,
+              'Work email verified. Welcome aboard.',
+              type: ToastType.success,
+            );
+          }
       }
 
       if (!mounted) return;
@@ -73,8 +87,10 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     } catch (error) {
       if (mounted) {
         showSnack(
-           context,
-          error is FormatException ? error.message : 'Something went wrong. Please try again.',
+          context,
+          error is FormatException
+              ? error.message
+              : 'Something went wrong. Please try again.',
           type: ToastType.error,
         );
       }
@@ -154,9 +170,16 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
             padding: const EdgeInsets.all(24),
             decoration: BoxDecoration(
               shape: BoxShape.circle,
-              border: Border.all(color: AppPalette.candyBlue.withValues(alpha: 0.3), width: 2),
+              border: Border.all(
+                color: AppPalette.candyBlue.withValues(alpha: 0.3),
+                width: 2,
+              ),
             ),
-            child: const Icon(Icons.handshake_outlined, size: 64, color: AppPalette.candyBlue),
+            child: const Icon(
+              Icons.handshake_outlined,
+              size: 64,
+              color: AppPalette.candyBlue,
+            ),
           ),
           const SizedBox(height: 32),
           const Text(
@@ -174,7 +197,11 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
           const Text(
             'Meet verified professionals in real life.\nYour next coffee, mentor, or co-founder is nearby.',
             textAlign: TextAlign.center,
-            style: TextStyle(fontSize: 14, color: AppPalette.textSecondary, height: 1.5),
+            style: TextStyle(
+              fontSize: 14,
+              color: AppPalette.textSecondary,
+              height: 1.5,
+            ),
           ),
         ],
       ),
@@ -187,9 +214,19 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
       children: [
         const SectionLabel('STEP 1 OF 3'),
         const SizedBox(height: 12),
-        const Text('Verify your phone', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppPalette.textPrimary)),
+        const Text(
+          'Verify your phone',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: AppPalette.textPrimary,
+          ),
+        ),
         const SizedBox(height: 8),
-        const Text('We use this to ensure our community remains safe and free of bots.', style: TextStyle(fontSize: 14, color: AppPalette.textSecondary)),
+        const Text(
+          'We use this to ensure our community remains safe and free of bots.',
+          style: TextStyle(fontSize: 14, color: AppPalette.textSecondary),
+        ),
         const SizedBox(height: 32),
         GlassTextField(
           controller: _phoneController,
@@ -220,9 +257,19 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
       children: [
         const SectionLabel('STEP 2 OF 3'),
         const SizedBox(height: 12),
-        const Text('Connect LinkedIn', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppPalette.textPrimary)),
+        const Text(
+          'Connect LinkedIn',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: AppPalette.textPrimary,
+          ),
+        ),
         const SizedBox(height: 8),
-        const Text('This proves your professional identity and helps us match you with relevant peers.', style: TextStyle(fontSize: 14, color: AppPalette.textSecondary)),
+        const Text(
+          'This proves your professional identity and helps us match you with relevant peers.',
+          style: TextStyle(fontSize: 14, color: AppPalette.textSecondary),
+        ),
         const SizedBox(height: 32),
         GlassTextField(
           controller: _linkedinController,
@@ -242,9 +289,19 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
       children: [
         const SectionLabel('STEP 3 OF 3'),
         const SizedBox(height: 12),
-        const Text('Professional Email', style: TextStyle(fontSize: 24, fontWeight: FontWeight.w700, color: AppPalette.textPrimary)),
+        const Text(
+          'Professional Email',
+          style: TextStyle(
+            fontSize: 24,
+            fontWeight: FontWeight.w700,
+            color: AppPalette.textPrimary,
+          ),
+        ),
         const SizedBox(height: 8),
-        const Text('Enter your corporate email to unlock Level 2 Trust. (No Gmail or Yahoo).', style: TextStyle(fontSize: 14, color: AppPalette.textSecondary)),
+        const Text(
+          'Enter your corporate email to unlock Level 2 Trust. (No Gmail or Yahoo).',
+          style: TextStyle(fontSize: 14, color: AppPalette.textSecondary),
+        ),
         const SizedBox(height: 32),
         GlassTextField(
           controller: _emailController,

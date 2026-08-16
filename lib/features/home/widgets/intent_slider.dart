@@ -31,7 +31,7 @@ class IntentSlider extends ConsumerWidget {
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 20),
             itemCount: IntentType.values.length,
-            separatorBuilder: (_, __) => const SizedBox(width: 12),
+            separatorBuilder: (_, _) => const SizedBox(width: 12),
             itemBuilder: (context, index) {
               final intent = IntentType.values[index];
               return _IntentCard(
@@ -40,7 +40,10 @@ class IntentSlider extends ConsumerWidget {
                 trustLevel: trustLevel,
                 onTap: () {
                   if (!intent.isUnlockedFor(trustLevel)) {
-                    showSnack(context, '${intent.label} requires Level ${intent.requiredTrustLevel} trust.');
+                    showSnack(
+                      context,
+                      '${intent.label} requires Level ${intent.requiredTrustLevel} trust.',
+                    );
                     return;
                   }
                   ref.read(selectedIntentProvider.notifier).state = intent;
@@ -96,7 +99,9 @@ class _IntentCard extends StatelessWidget {
                 child: Icon(
                   intent.icon,
                   size: 22,
-                  color: locked ? AppPalette.textSecondary : AppPalette.candyBlue,
+                  color: locked
+                      ? AppPalette.textSecondary
+                      : AppPalette.candyBlue,
                 ),
               ),
               const Spacer(),
@@ -106,7 +111,9 @@ class _IntentCard extends StatelessWidget {
                   fontSize: 12,
                   fontWeight: FontWeight.w700,
                   letterSpacing: 0.5,
-                  color: locked ? AppPalette.textSecondary : AppPalette.textPrimary,
+                  color: locked
+                      ? AppPalette.textSecondary
+                      : AppPalette.textPrimary,
                 ),
               ),
               const SizedBox(height: 4),
@@ -116,7 +123,9 @@ class _IntentCard extends StatelessWidget {
                   fontSize: 9,
                   fontWeight: FontWeight.w600,
                   letterSpacing: 1.2,
-                  color: locked ? AppPalette.danger.withValues(alpha: 0.8) : AppPalette.verified,
+                  color: locked
+                      ? AppPalette.danger.withValues(alpha: 0.8)
+                      : AppPalette.verified,
                 ),
               ),
             ],

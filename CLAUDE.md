@@ -10,7 +10,7 @@ Business/product truth for this app lives in `docs/` (exported from the Cowork p
 - `docs/01-product/requirements.md`, `docs/01-product/personas.md` — functional/non-functional requirements, target users.
 - `docs/02-domain/domain-model.md`, `docs/02-domain/trust-levels.md`, `docs/02-domain/verification-model.md` — the domain vocabulary and the trust-level/verification model the app implements.
 - `docs/03-architecture/` — system architecture, threat model, trust & safety architecture, safety features catalog, privacy/anti-abuse controls, operations & incident response.
-- `docs/04-decisions/` — ADR-001 through ADR-007. Why decisions were made; don't silently re-decide something recorded here — if a decision looks wrong once you're in the code, say so and propose a new ADR rather than implementing around it.
+- `docs/04-decisions/` — ADR-001 through ADR-010. Why decisions were made; don't silently re-decide something recorded here — if a decision looks wrong once you're in the code, say so and propose a new ADR rather than implementing around it.
 - `docs/05-ux/safety-ux-flows.md`, `docs/06-roadmap/roadmap.md`, `docs/07-research/` — UX flows, phased roadmap, legal/market research backing the above.
 
 `docs/` is generated — never hand-edit files under it. The vault ("Professional Meetups Vault" in the user's Documents folder) is the source of truth; after editing a note there, run `python3 scripts/sync_docs_from_vault.py` from the repo root to refresh `docs/` (mechanical wikilink-to-relative-link conversion, no content changes — safe and cheap to run anytime).

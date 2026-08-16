@@ -8,17 +8,19 @@ import 'package:professional_connections_platform/features/splash/splash_screen.
 void main() {
   WidgetsFlutterBinding.ensureInitialized();
 
-   // Configure image cache for better performance
+  // Configure image cache for better performance
   PaintingBinding.instance.imageCache.maximumSize = 100;
   PaintingBinding.instance.imageCache.maximumSizeBytes = 100 << 20; // 100 MB
 
-  SystemChrome.setSystemUIOverlayStyle(const SystemUiOverlayStyle(
-    statusBarColor: Colors.transparent,
-    statusBarIconBrightness: Brightness.light,
-    statusBarBrightness: Brightness.dark,
-    systemNavigationBarColor: AppPalette.onyx,
-    systemNavigationBarIconBrightness: Brightness.light,
-  ));
+  SystemChrome.setSystemUIOverlayStyle(
+    const SystemUiOverlayStyle(
+      statusBarColor: Colors.transparent,
+      statusBarIconBrightness: Brightness.light,
+      statusBarBrightness: Brightness.dark,
+      systemNavigationBarColor: AppPalette.onyx,
+      systemNavigationBarIconBrightness: Brightness.light,
+    ),
+  );
   runApp(const ProviderScope(child: ProfessionalConnectionsApp()));
 }
 
@@ -55,8 +57,13 @@ class ProfessionalConnectionsApp extends StatelessWidget {
         snackBarTheme: SnackBarThemeData(
           behavior: SnackBarBehavior.floating,
           backgroundColor: AppPalette.card,
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-          contentTextStyle: const TextStyle(color: AppPalette.candyBlue, fontSize: 13),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
+          contentTextStyle: const TextStyle(
+            color: AppPalette.candyBlue,
+            fontSize: 13,
+          ),
         ),
         // Add premium page transitions
         pageTransitionsTheme: const PageTransitionsTheme(
@@ -105,18 +112,11 @@ class _ZoomPageTransition extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FadeTransition(
-      opacity: CurvedAnimation(
-        parent: animation,
-        curve: Curves.easeInOut,
-      ),
+      opacity: CurvedAnimation(parent: animation, curve: Curves.easeInOut),
       child: ScaleTransition(
-        scale: Tween<double>(
-          begin: 0.92,
-          end: 1.0,
-        ).animate(CurvedAnimation(
-          parent: animation,
-          curve: Curves.easeOutCubic,
-        )),
+        scale: Tween<double>(begin: 0.92, end: 1.0).animate(
+          CurvedAnimation(parent: animation, curve: Curves.easeOutCubic),
+        ),
         child: child,
       ),
     );

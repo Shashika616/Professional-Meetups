@@ -31,14 +31,32 @@ class NetworkInsightsRow extends ConsumerWidget {
                 Expanded(child: _StatSkeleton()),
               ],
             ),
-            error: (_, __) => const SizedBox.shrink(),
+            error: (_, _) => const SizedBox.shrink(),
             data: (stats) => Row(
               children: [
-                Expanded(child: _StatCard(label: 'VERIFIED NEARBY', value: '${stats['nearby']}', icon: Icons.people_alt_rounded)),
+                Expanded(
+                  child: _StatCard(
+                    label: 'VERIFIED NEARBY',
+                    value: '${stats['nearby']}',
+                    icon: Icons.people_alt_rounded,
+                  ),
+                ),
                 const SizedBox(width: 12),
-                Expanded(child: _StatCard(label: 'MEETUPS TODAY', value: '${stats['meetups']}', icon: Icons.coffee_rounded)),
+                Expanded(
+                  child: _StatCard(
+                    label: 'MEETUPS TODAY',
+                    value: '${stats['meetups']}',
+                    icon: Icons.coffee_rounded,
+                  ),
+                ),
                 const SizedBox(width: 12),
-                Expanded(child: _StatCard(label: 'TRUST SCORE', value: '${stats['trustScore']}', icon: Icons.verified_user_rounded)),
+                Expanded(
+                  child: _StatCard(
+                    label: 'TRUST SCORE',
+                    value: '${stats['trustScore']}',
+                    icon: Icons.verified_user_rounded,
+                  ),
+                ),
               ],
             ),
           ),
@@ -49,7 +67,11 @@ class NetworkInsightsRow extends ConsumerWidget {
 }
 
 class _StatCard extends StatelessWidget {
-  const _StatCard({required this.label, required this.value, required this.icon});
+  const _StatCard({
+    required this.label,
+    required this.value,
+    required this.icon,
+  });
 
   final String label;
   final String value;

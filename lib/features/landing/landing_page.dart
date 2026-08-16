@@ -33,23 +33,38 @@ class LandingPage extends StatelessWidget {
                   icon: Icons.arrow_forward_rounded,
                   onPressed: () {
                     Navigator.of(context).push(
-                      MaterialPageRoute(builder: (context) => const OnboardingFlow()),
+                      MaterialPageRoute(
+                        builder: (context) => const OnboardingFlow(),
+                      ),
                     );
                   },
                 ),
                 const SizedBox(height: 14),
                 GestureDetector(
-                  onTap: () => showSnack(context, 'Sign in arrives together with the backend.'),
+                  onTap: () => showSnack(
+                    context,
+                    'Sign in arrives together with the backend.',
+                  ),
                   child: const Text.rich(
                     TextSpan(
                       children: [
                         TextSpan(
                           text: 'ALREADY A MEMBER?   ',
-                          style: TextStyle(fontSize: 10, letterSpacing: 1.6, fontWeight: FontWeight.w700, color: AppPalette.textSecondary),
+                          style: TextStyle(
+                            fontSize: 10,
+                            letterSpacing: 1.6,
+                            fontWeight: FontWeight.w700,
+                            color: AppPalette.textSecondary,
+                          ),
                         ),
                         TextSpan(
                           text: 'SIGN IN',
-                          style: TextStyle(fontSize: 10, letterSpacing: 1.6, fontWeight: FontWeight.w900, color: AppPalette.candyBlue),
+                          style: TextStyle(
+                            fontSize: 10,
+                            letterSpacing: 1.6,
+                            fontWeight: FontWeight.w900,
+                            color: AppPalette.candyBlue,
+                          ),
                         ),
                       ],
                     ),
@@ -71,7 +86,12 @@ class LandingPage extends StatelessWidget {
         Expanded(
           child: Text(
             'PROFESSIONAL CONNECTIONS',
-            style: TextStyle(fontSize: 9, letterSpacing: 2.2, fontWeight: FontWeight.w800, color: AppPalette.textPrimary),
+            style: TextStyle(
+              fontSize: 9,
+              letterSpacing: 2.2,
+              fontWeight: FontWeight.w800,
+              color: AppPalette.textPrimary,
+            ),
           ),
         ),
         Icon(Icons.language_rounded, size: 16, color: AppPalette.textSecondary),
@@ -127,7 +147,12 @@ class LandingPage extends StatelessWidget {
               maxLines: 1,
               softWrap: false,
               overflow: TextOverflow.ellipsis,
-              style: TextStyle(fontSize: 9, letterSpacing: 1.6, fontWeight: FontWeight.w700, color: AppPalette.textPrimary),
+              style: TextStyle(
+                fontSize: 9,
+                letterSpacing: 1.6,
+                fontWeight: FontWeight.w700,
+                color: AppPalette.textPrimary,
+              ),
             ),
           ),
         ],

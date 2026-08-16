@@ -48,6 +48,10 @@ Business truth lives in this vault (`01 - Product`, `02 - Domain`, `03 - Archite
 
 Don't let either side quietly rewrite the same truth. If Claude Code discovers, mid-implementation, that a document here is wrong or incomplete (e.g. "the domain model assumed synchronous processing, but the real workflow needs to be event-driven"), it should say so explicitly and propose the change as a new ADR — not implement around it silently. That proposal comes back through Cowork/this vault for Shashika to decide, then the relevant doc and `docs/` copy get updated together.
 
+## Keeping the vault and `docs/` in sync
+
+The vault is the only place edited by hand. `docs/` in the repo is a generated mirror (wikilinks rewritten to relative markdown links so GitHub, plain markdown viewers, and Claude Code can all read it normally) — regenerate it with `python3 scripts/sync_docs_from_vault.py` from the repo root after any vault edit. This is a mechanical find-and-replace, not a rewrite, so it's cheap to run every time and never needs to touch an LLM. Never hand-edit files under `docs/` directly; they get silently overwritten on the next sync.
+
 ## CLAUDE.md discipline
 
 `CLAUDE.md` in the eventual repo should stay small (roughly 100–200 lines): project identity, core architecture principles, commands, coding conventions, testing/security rules, and **links** to the detailed docs in `docs/` — not the full content of those docs pasted in. See [CLAUDE.md Template (For Code Repo)](claude-md-template-for-code-repo.md). As the codebase grows, push specialized rules into `.claude/rules/*.md` (backend, frontend, database, testing, security) rather than growing `CLAUDE.md` indefinitely.

@@ -4,19 +4,37 @@
 abstract final class Validators {
   static final RegExp _phone = RegExp(r'^\+?[0-9\s-]{9,15}$');
   static final RegExp _otp = RegExp(r'^\d{6}$');
-  static final RegExp _linkedin =
-      RegExp(r'^(https?://)?(www\.)?linkedin\.com/in/[A-Za-z0-9_\-]{5,}/?$');
-  static final RegExp _email =
-      RegExp(r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$');
+  static final RegExp _linkedin = RegExp(
+    r'^(https?://)?(www\.)?linkedin\.com/in/[A-Za-z0-9_\-]{5,}/?$',
+  );
+  static final RegExp _email = RegExp(
+    r'^[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}$',
+  );
 
   static const Set<String> freeProviders = {
-    'gmail.com', 'yahoo.com', 'hotmail.com', 'outlook.com', 'icloud.com',
-    'proton.me', 'protonmail.com', 'aol.com', 'zoho.com', 'gmx.com',
+    'gmail.com',
+    'yahoo.com',
+    'hotmail.com',
+    'outlook.com',
+    'icloud.com',
+    'proton.me',
+    'protonmail.com',
+    'aol.com',
+    'zoho.com',
+    'gmx.com',
   };
 
   static const Set<String> roleBasedPrefixes = {
-    'info', 'admin', 'hr', 'contact', 'support', 'careers', 'jobs',
-    'office', 'sales', 'hello',
+    'info',
+    'admin',
+    'hr',
+    'contact',
+    'support',
+    'careers',
+    'jobs',
+    'office',
+    'sales',
+    'hello',
   };
 
   static String? phone(String value) {
@@ -36,7 +54,9 @@ abstract final class Validators {
   static String? linkedin(String value) {
     final v = value.trim();
     if (v.isEmpty) return 'LinkedIn profile is required.';
-    if (!_linkedin.hasMatch(v)) return 'Enter a valid linkedin.com/in profile URL.';
+    if (!_linkedin.hasMatch(v)) {
+      return 'Enter a valid linkedin.com/in profile URL.';
+    }
     return null;
   }
 

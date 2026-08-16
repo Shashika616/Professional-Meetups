@@ -37,15 +37,25 @@ class SafetyPage extends StatelessWidget {
                     padding: const EdgeInsets.only(bottom: 10),
                     child: Glass(
                       radius: 16,
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 12,
+                      ),
                       child: Row(
                         children: [
-                          const Icon(Icons.check_circle_outline, size: 18, color: AppPalette.verified),
+                          const Icon(
+                            Icons.check_circle_outline,
+                            size: 18,
+                            color: AppPalette.verified,
+                          ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: Text(
                               checklist[index],
-                              style: const TextStyle(color: AppPalette.textPrimary, fontSize: 13),
+                              style: const TextStyle(
+                                color: AppPalette.textPrimary,
+                                fontSize: 13,
+                              ),
                             ),
                           ),
                         ],
@@ -61,20 +71,48 @@ class SafetyPage extends StatelessWidget {
                 context: context,
                 builder: (context) => AlertDialog(
                   backgroundColor: AppPalette.card,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-                  title: const Text('EMERGENCY SOS', style: TextStyle(color: AppPalette.danger, letterSpacing: 1.6, fontSize: 15)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  title: const Text(
+                    'EMERGENCY SOS',
+                    style: TextStyle(
+                      color: AppPalette.danger,
+                      letterSpacing: 1.6,
+                      fontSize: 15,
+                    ),
+                  ),
                   content: const Text(
                     'This will share your live location with trusted contacts and alert the safety team.',
-                    style: TextStyle(color: AppPalette.textSecondary, fontSize: 13),
+                    style: TextStyle(
+                      color: AppPalette.textSecondary,
+                      fontSize: 13,
+                    ),
                   ),
                   actions: [
-                    TextButton(onPressed: () => Navigator.pop(context), child: const Text('CANCEL', style: TextStyle(color: AppPalette.textSecondary))),
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text(
+                        'CANCEL',
+                        style: TextStyle(color: AppPalette.textSecondary),
+                      ),
+                    ),
                     TextButton(
                       onPressed: () {
                         Navigator.pop(context);
-                        showSnack(context, 'SOS activated. Trusted contacts notified.', type: ToastType.error);
+                        showSnack(
+                          context,
+                          'SOS activated. Trusted contacts notified.',
+                          type: ToastType.error,
+                        );
                       },
-                      child: const Text('CONFIRM', style: TextStyle(color: AppPalette.danger, fontWeight: FontWeight.w700)),
+                      child: const Text(
+                        'CONFIRM',
+                        style: TextStyle(
+                          color: AppPalette.danger,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
                     ),
                   ],
                 ),
@@ -87,11 +125,20 @@ class SafetyPage extends StatelessWidget {
                 child: const Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    Icon(Icons.emergency_share, color: AppPalette.danger, size: 20),
+                    Icon(
+                      Icons.emergency_share,
+                      color: AppPalette.danger,
+                      size: 20,
+                    ),
                     SizedBox(width: 10),
                     Text(
                       'TRIGGER SOS',
-                      style: TextStyle(color: AppPalette.danger, fontWeight: FontWeight.w800, letterSpacing: 2.4, fontSize: 13),
+                      style: TextStyle(
+                        color: AppPalette.danger,
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: 2.4,
+                        fontSize: 13,
+                      ),
                     ),
                   ],
                 ),
