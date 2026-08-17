@@ -36,6 +36,20 @@ class _HomePageState extends ConsumerState<HomePage> {
   Widget build(BuildContext context) {
     final selectedIntent = ref.watch(selectedIntentProvider);
 
+    // Same pattern ProfilePage already uses (frontend/PLAN.md Step 13) —
+    // fullName/profilePhotoUrl come from the cached session, "Member" is
+    // the fallback while it's still loading or genuinely absent, and an
+    // empty (not just null) photo URL is treated as "no photo" so
+    // ProfessionalAvatar doesn't try to load an empty Image.network src.
+    final profile = ref.watch(authSessionProvider).value?.profile;
+    final fullName = profile?.fullName;
+    final displayName = (fullName == null || fullName.isEmpty)
+        ? 'Member'
+        : fullName;
+    final imageUrl = (profile?.profilePhotoUrl.isNotEmpty ?? false)
+        ? profile!.profilePhotoUrl
+        : null;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
@@ -44,7 +58,7 @@ class _HomePageState extends ConsumerState<HomePage> {
           addAutomaticKeepAlives: true,
           addRepaintBoundaries: true,
           children: [
-            const HomeHeader(userName: 'Shashika Fernando'),
+            HomeHeader(userName: displayName, imageUrl: imageUrl),
             AvailabilitySearchBar(
               controller: availabilityController,
               onFilterTap: () => showSnack(

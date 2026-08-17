@@ -25,14 +25,18 @@ Business/product truth for this app lives in `docs/` (exported from the Cowork p
 - `docs/01-product/requirements.md`, `docs/01-product/personas.md` — functional/non-functional requirements, target users.
 - `docs/02-domain/domain-model.md`, `docs/02-domain/trust-levels.md`, `docs/02-domain/verification-model.md` — the domain vocabulary and the trust-level/verification model the app implements.
 - `docs/03-architecture/` — system architecture, threat model, trust & safety architecture, safety features catalog, privacy/anti-abuse controls, operations & incident response.
-- `docs/04-decisions/` — ADR-001 through ADR-011. Why decisions were made; don't silently re-decide something recorded here — if a decision looks wrong once you're in the code, say so and propose a new ADR rather than implementing around it.
+- `docs/04-decisions/` — ADR-001 through ADR-012. Why decisions were made; don't silently re-decide something recorded here — if a decision looks wrong once you're in the code, say so and propose a new ADR rather than implementing around it.
 - `docs/05-ux/safety-ux-flows.md`, `docs/06-roadmap/roadmap.md`, `docs/07-research/` — UX flows, phased roadmap, legal/market research backing the above.
 
 `docs/` is generated — never hand-edit files under it. The vault ("Professional Meetups Vault" in the user's Documents folder) is the source of truth; after editing a note there, run `python3 scripts/sync_docs_from_vault.py` from the repo root to refresh `docs/` (mechanical wikilink-to-relative-link conversion, no content changes — safe and cheap to run anytime).
 
-## Known Gaps (flagged 2026-08-16, not yet fixed)
+**Check `docs/00-project/action-tracker.md` at the start of any nontrivial task.** It's the current, actively-maintained checklist of what's outstanding (pending decisions, human-prerequisite steps not yet done, deliberately-deferred gaps) — more current than this file's own Known Gaps section below, which can drift between vault syncs.
 
-- **`frontend/lib/features/onboarding/onboarding_flow.dart` implements the pre-ADR-006 trust model.** It runs phone → LinkedIn (URL-paste only) → corporate email as three sequential *mandatory* steps before entering `AppShell`, and labels corporate email as unlocking "Level 2 Trust." The current design (`docs/02-domain/trust-levels.md`, `docs/04-decisions/adr-006-progressive-linkedin-first-trust-onboarding.md`) instead wants: LinkedIn (federated OAuth preferred, pasted-URL as a lower-trust fallback that can't unlock matching) as the entry point → phone + personal email + personal details (name/address) as Level 2, the real floor for matching → corporate email as an optional Level 3 booster → optional KYC/liveness as Level 4. `IntentType.requiredTrustLevel` and `UserProfile` also only model levels 1 and 4, with no level 2/3 distinction and no federated-vs-claimed LinkedIn field. **This is intentionally not fixed yet** — flagged here so it isn't rebuilt on top of, until it's explicitly picked up as a task.
+## Known Gaps
+
+- **Level 1a (LinkedIn federated onboarding) — fixed (2026-08-16/17).** `onboarding_flow.dart` runs a real LinkedIn OAuth/OIDC flow against the live backend (ADR-011), replacing the old mandatory phone → LinkedIn-URL-paste → corporate-email wizard. PKCE was later removed from this flow (LinkedIn's self-serve product doesn't support it — see ADR-011's correction section); `state`-based CSRF protection remains.
+- **Level 2/3 (phone/personal-email/personal-details, corporate email MVP) — fully planned and audited, not yet built, as of 2026-08-17.** `backend/PLAN.md`/`frontend/PLAN.md`'s Level 2/3 addenda are the execution brief (see ADR-012 and its correction section for the design decisions — phone verification uses the same backend-owned OTP mechanism as email, not Firebase; Twilio for SMS, Resend for email, both with logging fallbacks when credentials are empty). Level 1b (pasted-URL LinkedIn fallback) and Level 4 (KYC) remain unbuilt and out of scope for this pass — don't build UI or backend for either without an explicit go-ahead. `IntentType.requiredTrustLevel`/`UserProfile` will need extending once Level 2/3 land server-side — don't add speculative fields ahead of the backend that would back them.
+- **This file's "Architecture" section below is stale in places** (written when the frontend was mock-only and onboarding was still the old 4-step wizard) — cross-check against the actual code rather than trusting the Navigation/Architecture prose blindly until it's refreshed. Tracked in `docs/00-project/action-tracker.md`.
 
 ## Commands
 
@@ -65,7 +69,7 @@ iOS-specific notes:
 
 ## Architecture
 
-The Flutter app under `frontend/` is a **frontend-only scaffold** for a professional-networking/meetup app. There is no real backend wired in yet: every service is a `Mock*` implementation that simulates network latency and validation. The codebase is deliberately structured so the real backend under `backend/` (currently scaffolding only — see `backend/README.md`/`backend/PLAN.md`) can be swapped in later without touching UI code. Everything below is relative to `frontend/`.
+The Flutter app under `frontend/` started as a frontend-only scaffold with every service as a `Mock*` implementation. **As of ADR-011, `AuthService` is real** (`HttpAuthService`, talking to the live `backend/` gateway — see `frontend/PLAN.md`) — `MockAuthService` is kept only for widget tests, not used at runtime. Other services (`MatchingService`, etc.) remain mock-only until their own backend slices are built. The codebase is deliberately structured so each mock can be swapped for a real implementation independently, one bounded slice at a time, without touching unrelated UI code. Everything below is relative to `frontend/`.
 
 ### State management: Riverpod
 
@@ -84,9 +88,13 @@ Business logic is defined as `abstract interface class` contracts in `frontend/l
 No router package — plain `Navigator.push`/`pushReplacement` with `MaterialPageRoute`. Fixed linear flow:
 
 ```
-main.dart → SplashScreen → LandingPage → OnboardingFlow (4 steps: welcome → phone/OTP → LinkedIn → corporate email)
-          → AppShell (bottom nav: Home, Matches, Safety, Chats, Profile)
+main.dart → SplashScreen → (session found) → AppShell
+                          → (no session) → LandingPage → OnboardingFlow (LinkedIn sign-in;
+                            Level 2/3 steps land here per the Level 2/3 addenda once built)
+                          → AppShell (bottom nav: Home, Matches, Safety, Chats, Profile)
 ```
+
+(Superseded 2026-08-17: this was a 4-step phone/LinkedIn/corporate-email wizard with no session persistence — replaced by ADR-011's real LinkedIn OAuth flow plus session-restore-on-launch.)
 
 `AppShell` ([frontend/lib/app_shell.dart](frontend/lib/app_shell.dart)) is a simple `IndexedStack`-style page switcher driven by local `setState`, not nested routing.
 

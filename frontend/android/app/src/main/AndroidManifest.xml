@@ -24,7 +24,23 @@
                 <action android:name="android.intent.action.MAIN"/>
                 <category android:name="android.intent.category.LAUNCHER"/>
             </intent-filter>
+            <!-- LinkedIn OAuth redirect deep link (ADR-011 frontend slice) -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="professionalconnections" android:host="auth"/>
+            </intent-filter>
         </activity>
+        <!-- Prevents the Flutter engine from routing the LinkedIn OAuth
+             deep link (professionalconnections://auth/linkedin/callback)
+             through its own named-route system, which would otherwise
+             throw "Could not find a generator for route" since this app
+             uses plain Navigator.push, not onGenerateRoute. app_links'
+             own channel listener handles the redirect instead. -->
+        <meta-data
+            android:name="flutter_deeplinking_enabled"
+            android:value="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

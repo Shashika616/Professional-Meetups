@@ -55,6 +55,49 @@ func (ns NullAccountStatus) Value() (driver.Value, error) {
 	return string(ns.AccountStatus), nil
 }
 
+type VerificationPurpose string
+
+const (
+	VerificationPurposePhone          VerificationPurpose = "phone"
+	VerificationPurposePersonalEmail  VerificationPurpose = "personal_email"
+	VerificationPurposeCorporateEmail VerificationPurpose = "corporate_email"
+)
+
+func (e *VerificationPurpose) Scan(src interface{}) error {
+	switch s := src.(type) {
+	case []byte:
+		*e = VerificationPurpose(s)
+	case string:
+		*e = VerificationPurpose(s)
+	default:
+		return fmt.Errorf("unsupported scan type for VerificationPurpose: %T", src)
+	}
+	return nil
+}
+
+type NullVerificationPurpose struct {
+	VerificationPurpose VerificationPurpose `json:"verification_purpose"`
+	Valid               bool                `json:"valid"` // Valid is true if VerificationPurpose is not NULL
+}
+
+// Scan implements the Scanner interface.
+func (ns *NullVerificationPurpose) Scan(value interface{}) error {
+	if value == nil {
+		ns.VerificationPurpose, ns.Valid = "", false
+		return nil
+	}
+	ns.Valid = true
+	return ns.VerificationPurpose.Scan(value)
+}
+
+// Value implements the driver Valuer interface.
+func (ns NullVerificationPurpose) Value() (driver.Value, error) {
+	if !ns.Valid {
+		return nil, nil
+	}
+	return string(ns.VerificationPurpose), nil
+}
+
 type RefreshToken struct {
 	ID         uuid.UUID          `json:"id"`
 	UserID     uuid.UUID          `json:"user_id"`
@@ -66,13 +109,31 @@ type RefreshToken struct {
 }
 
 type User struct {
-	ID              uuid.UUID          `json:"id"`
-	LinkedinSub     pgtype.Text        `json:"linkedin_sub"`
-	FullName        string             `json:"full_name"`
-	ProfilePhotoUrl pgtype.Text        `json:"profile_photo_url"`
-	Headline        pgtype.Text        `json:"headline"`
-	TrustLevel      int16              `json:"trust_level"`
-	AccountStatus   AccountStatus      `json:"account_status"`
-	CreatedAt       pgtype.Timestamptz `json:"created_at"`
-	UpdatedAt       pgtype.Timestamptz `json:"updated_at"`
+	ID                  uuid.UUID          `json:"id"`
+	LinkedinSub         pgtype.Text        `json:"linkedin_sub"`
+	FullName            string             `json:"full_name"`
+	ProfilePhotoUrl     pgtype.Text        `json:"profile_photo_url"`
+	Headline            pgtype.Text        `json:"headline"`
+	TrustLevel          int16              `json:"trust_level"`
+	AccountStatus       AccountStatus      `json:"account_status"`
+	CreatedAt           pgtype.Timestamptz `json:"created_at"`
+	UpdatedAt           pgtype.Timestamptz `json:"updated_at"`
+	PhoneNumber         pgtype.Text        `json:"phone_number"`
+	PersonalEmail       pgtype.Text        `json:"personal_email"`
+	LegalName           pgtype.Text        `json:"legal_name"`
+	Address             pgtype.Text        `json:"address"`
+	CompanyDomain       pgtype.Text        `json:"company_domain"`
+	WorkEmailVerified   bool               `json:"work_email_verified"`
+	WorkEmailVerifiedAt pgtype.Timestamptz `json:"work_email_verified_at"`
+}
+
+type VerificationCode struct {
+	ID        uuid.UUID           `json:"id"`
+	UserID    uuid.UUID           `json:"user_id"`
+	Purpose   VerificationPurpose `json:"purpose"`
+	Target    string              `json:"target"`
+	CodeHash  string              `json:"code_hash"`
+	Attempts  int16               `json:"attempts"`
+	ExpiresAt pgtype.Timestamptz  `json:"expires_at"`
+	CreatedAt pgtype.Timestamptz  `json:"created_at"`
 }

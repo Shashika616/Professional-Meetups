@@ -17,10 +17,12 @@ import (
 	"google.golang.org/grpc"
 
 	"github.com/professional-connections/backend/services/auth/internal/config"
+	"github.com/professional-connections/backend/services/auth/internal/email"
 	"github.com/professional-connections/backend/services/auth/internal/events"
 	"github.com/professional-connections/backend/services/auth/internal/linkedin"
 	"github.com/professional-connections/backend/services/auth/internal/repository"
 	"github.com/professional-connections/backend/services/auth/internal/service"
+	"github.com/professional-connections/backend/services/auth/internal/sms"
 	sharedjwt "github.com/professional-connections/backend/shared/jwt"
 	"github.com/professional-connections/backend/shared/logging"
 	authv1 "github.com/professional-connections/backend/shared/proto/auth/v1"
@@ -28,6 +30,12 @@ import (
 
 func main() {
 	logger := logging.New()
+	// apperror.ToGRPCStatus and internal/service log unclassified/redacted
+	// error detail via slog.Default() rather than threading a *slog.Logger
+	// through every call site — this makes that output match the rest of
+	// the service's Cloud-Logging JSON format instead of slog's plain-text
+	// default.
+	slog.SetDefault(logger)
 
 	if err := run(logger); err != nil {
 		logger.Error("auth service exited with error", "error", err)
@@ -76,12 +84,18 @@ func run(logger *slog.Logger) error {
 		ClientSecret: cfg.LinkedInClientSecret,
 	})
 
+	emailSender := newEmailSender(cfg, logger)
+	smsSender := newSmsSender(cfg, logger)
+
 	svc := service.New(
 		repository.NewUserRepository(pool),
 		repository.NewRefreshTokenRepository(pool),
+		repository.NewVerificationCodeRepository(pool),
 		linkedInClient,
 		signer,
 		publisher,
+		emailSender,
+		smsSender,
 	)
 
 	listener, err := net.Listen("tcp", ":"+cfg.GRPCPort)
@@ -109,4 +123,28 @@ func run(logger *slog.Logger) error {
 		grpcServer.GracefulStop()
 		return nil
 	}
+}
+
+// newEmailSender uses ResendEmailSender only once RESEND_API_KEY/
+// RESEND_FROM_EMAIL are both non-empty — LoggingEmailSender otherwise, so
+// local dev/tests keep working before a real Resend account exists
+// (backend/PLAN.md's Level 2/3 addendum, Step A).
+func newEmailSender(cfg config.Config, logger *slog.Logger) email.EmailSender {
+	if cfg.ResendAPIKey != "" && cfg.ResendFromEmail != "" {
+		logger.Info("verification email delivery: Resend")
+		return email.NewResendEmailSender(cfg.ResendAPIKey, cfg.ResendFromEmail)
+	}
+	logger.Info("verification email delivery: LoggingEmailSender (RESEND_API_KEY/RESEND_FROM_EMAIL not set)")
+	return email.NewLoggingEmailSender()
+}
+
+// newSmsSender uses TwilioSmsSender only once all three TWILIO_* vars are
+// non-empty — LoggingSmsSender otherwise, same fallback pattern as email.
+func newSmsSender(cfg config.Config, logger *slog.Logger) sms.SmsSender {
+	if cfg.TwilioAccountSID != "" && cfg.TwilioAuthToken != "" && cfg.TwilioPhoneNumber != "" {
+		logger.Info("verification SMS delivery: Twilio")
+		return sms.NewTwilioSmsSender(cfg.TwilioAccountSID, cfg.TwilioAuthToken, cfg.TwilioPhoneNumber)
+	}
+	logger.Info("verification SMS delivery: LoggingSmsSender (TWILIO_* not fully set)")
+	return sms.NewLoggingSmsSender()
 }

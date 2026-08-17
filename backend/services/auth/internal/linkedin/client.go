@@ -1,6 +1,6 @@
-// Package linkedin implements this backend's half of the LinkedIn OIDC +
-// PKCE flow (ADR-011, PLAN.md Step 4): exchanging an authorization code for
-// a LinkedIn access token, then fetching basic profile info. The LinkedIn
+// Package linkedin implements this backend's half of the LinkedIn OIDC flow
+// (ADR-011, PLAN.md Step 4): exchanging an authorization code for a
+// LinkedIn access token, then fetching basic profile info. The LinkedIn
 // access token returned by ExchangeCode must never be persisted — callers
 // call FetchUserInfo once and discard it immediately after (ADR-003's
 // minimal-retention principle, applied here to LinkedIn tokens too).
@@ -28,9 +28,8 @@ const (
 )
 
 // Config holds the confidential-client credentials this backend uses for
-// its own exchange with LinkedIn (LINKEDIN_CLIENT_ID/SECRET) — a protection
-// distinct from, and in addition to, the PKCE code_verifier the mobile app
-// supplies on every request (see package doc and ADR-011).
+// its own exchange with LinkedIn (LINKEDIN_CLIENT_ID/SECRET) — see
+// ExchangeCode's doc comment for why this alone (no PKCE) is the design.
 type Config struct {
 	ClientID     string
 	ClientSecret string
@@ -92,18 +91,25 @@ type tokenResponse struct {
 	ExpiresIn   int    `json:"expires_in"`
 }
 
-// ExchangeCode exchanges an authorization code (obtained by the mobile app
-// via the PKCE flow) for a LinkedIn access token. This backend's own
-// client_secret is used for its confidential-client exchange — LinkedIn
-// separately validates the PKCE code_verifier as part of this same call.
-func (c *Client) ExchangeCode(ctx context.Context, code, verifier, redirectURI string) (Token, error) {
+// ExchangeCode exchanges an authorization code (obtained by the mobile app)
+// for a LinkedIn access token, using this backend's own client_secret for
+// its confidential-client exchange.
+//
+// Deliberately no PKCE code_verifier: LinkedIn's Sign In with LinkedIn /
+// OpenID Connect product rejects the exchange outright (401 invalid_client)
+// when a code_challenge/code_verifier pair is present — confirmed via
+// direct testing against LinkedIn's real endpoint, and consistent with
+// LinkedIn's own /oauth/v2/accessToken docs not listing code_verifier as a
+// supported parameter for this product. Security is still sound: this is a
+// confidential client (the secret never leaves this service), which is
+// exactly the property PKCE exists to substitute for on a public client.
+func (c *Client) ExchangeCode(ctx context.Context, code, redirectURI string) (Token, error) {
 	form := url.Values{
 		"grant_type":    {"authorization_code"},
 		"code":          {code},
 		"redirect_uri":  {redirectURI},
 		"client_id":     {c.clientID},
 		"client_secret": {c.clientSecret},
-		"code_verifier": {verifier},
 	}
 
 	req, err := http.NewRequestWithContext(

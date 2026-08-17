@@ -12,26 +12,27 @@ import (
 // actually used by this slice's code — a missing value fails Load()
 // outright.
 //
-// docker-compose.yml also sets JWT_PUBLIC_KEY_PATH for the gateway
-// container, forward-provisioning it for a future slice that adds a
-// JWT-protected route (per ADR-009, the gateway is what will own
-// verification). Nothing in this Level-1a-only onboarding slice has a
-// protected route yet, so it's deliberately not loaded here — see
-// backend/PLAN.md's scope boundary. Add it here when that slice needs it,
-// not before.
+// JWT_PUBLIC_KEY_PATH was already set in docker-compose.yml before this was
+// ever read anywhere — forward-provisioned for this exact moment (per
+// ADR-009, the gateway is what will own verification). This is genuinely
+// new wiring, confirmed by reading the actual pre-addendum gateway code:
+// nothing constructed a jwt.Verifier before backend/PLAN.md's Level 2/3
+// addendum, Step F.
 type Config struct {
-	Port            string
-	AuthServiceAddr string
-	RedisAddr       string
+	Port             string
+	AuthServiceAddr  string
+	RedisAddr        string
+	JWTPublicKeyPath string
 }
 
 // Load reads Config from the environment, failing fast if any required
 // variable is missing or empty.
 func Load() (Config, error) {
 	cfg := Config{
-		Port:            os.Getenv("PORT"),
-		AuthServiceAddr: os.Getenv("AUTH_SERVICE_ADDR"),
-		RedisAddr:       os.Getenv("REDIS_ADDR"),
+		Port:             os.Getenv("PORT"),
+		AuthServiceAddr:  os.Getenv("AUTH_SERVICE_ADDR"),
+		RedisAddr:        os.Getenv("REDIS_ADDR"),
+		JWTPublicKeyPath: os.Getenv("JWT_PUBLIC_KEY_PATH"),
 	}
 
 	required := []struct {
@@ -41,6 +42,7 @@ func Load() (Config, error) {
 		{"PORT", cfg.Port},
 		{"AUTH_SERVICE_ADDR", cfg.AuthServiceAddr},
 		{"REDIS_ADDR", cfg.RedisAddr},
+		{"JWT_PUBLIC_KEY_PATH", cfg.JWTPublicKeyPath},
 	}
 	for _, req := range required {
 		if req.value == "" {

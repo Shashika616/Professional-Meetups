@@ -20,6 +20,7 @@ import (
 	"github.com/professional-connections/backend/services/gateway/internal/config"
 	"github.com/professional-connections/backend/services/gateway/internal/handlers"
 	"github.com/professional-connections/backend/services/gateway/internal/middleware"
+	sharedjwt "github.com/professional-connections/backend/shared/jwt"
 	"github.com/professional-connections/backend/shared/logging"
 )
 
@@ -65,13 +66,26 @@ func run(logger *slog.Logger) error {
 		return fmt.Errorf("connect to redis: %w", err)
 	}
 
-	mux := http.NewServeMux()
-	handlers.New(auth).Register(mux)
+	// First time the gateway constructs a jwt.Verifier — everything before
+	// the Level 2/3 addendum was unauthenticated at this layer (confirmed
+	// by reading the actual pre-addendum code, not assumed). Fails fast at
+	// startup if the public key is missing/unreadable, same discipline as
+	// every other required config value.
+	verifier, err := sharedjwt.NewVerifier(cfg.JWTPublicKeyPath)
+	if err != nil {
+		return fmt.Errorf("load jwt public key: %w", err)
+	}
 
-	// Every route in this slice is under /v1/auth/* (PLAN.md's scope
-	// boundary — no matching/messaging endpoints yet), so rate limiting the
-	// whole mux is equivalent to scoping it per-route. Revisit this if a
-	// non-auth route is ever added here — it should not inherit the same
+	mux := http.NewServeMux()
+	handlers.New(auth, verifier).Register(mux)
+
+	// Every route in this slice is under /v1/auth/* or /v1/verification/*
+	// plus /v1/users/me (PLAN.md's scope boundary — no matching/messaging
+	// endpoints yet), so rate limiting the whole mux is equivalent to
+	// scoping it per-route — the new verification routes are meant to share
+	// the same IP-based limit (backend/PLAN.md's Level 2/3 addendum, Step G:
+	// registering them here, not writing a second limiter). Revisit this if
+	// a non-auth route is ever added here — it should not inherit the same
 	// pre-auth-abuse rate limit.
 	var handler http.Handler = mux
 	handler = middleware.RateLimit(redisClient)(handler)

@@ -3,14 +3,40 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:professional_connections_platform/app_shell.dart';
 import 'package:professional_connections_platform/core/providers/app_providers.dart';
+import 'package:professional_connections_platform/core/services/auth_service.dart';
 import 'package:professional_connections_platform/core/theme/app_palette.dart';
 import 'package:professional_connections_platform/core/utils/snacks.dart';
-import 'package:professional_connections_platform/core/validation/validators.dart';
 import 'package:professional_connections_platform/core/widgets/app_background.dart';
-import 'package:professional_connections_platform/core/widgets/glass_text_field.dart';
 import 'package:professional_connections_platform/core/widgets/gradient_button.dart';
-import 'package:professional_connections_platform/core/widgets/section_label.dart';
 import 'package:professional_connections_platform/core/utils/toast.dart';
+import 'package:professional_connections_platform/features/verification/corporate_email_verification_page.dart';
+import 'package:professional_connections_platform/features/verification/personal_details_page.dart';
+import 'package:professional_connections_platform/features/verification/personal_email_verification_page.dart';
+import 'package:professional_connections_platform/features/verification/phone_verification_page.dart';
+
+/// After a successful LinkedIn sign-in, the sequence phone → personal
+/// email → personal details → corporate email runs before landing in
+/// [AppShell] — each step individually skippable (`frontend/PLAN.md`'s
+/// Level 2/3 addendum, Step 5). Deliberately simple: a plain step-index
+/// push chain, not a `PageView` or a wizard with back-navigation/progress-
+/// saving — if the app is killed mid-sequence, the user lands back in
+/// [AppShell] next launch (the LinkedIn session already exists) and
+/// finishes any skipped steps from `ProfilePage` instead.
+const List<WidgetBuilder> _verificationSequence = [
+  _buildPhoneVerificationPage,
+  _buildPersonalEmailVerificationPage,
+  _buildPersonalDetailsPage,
+  _buildCorporateEmailVerificationPage,
+];
+
+Widget _buildPhoneVerificationPage(BuildContext context) =>
+    const PhoneVerificationPage();
+Widget _buildPersonalEmailVerificationPage(BuildContext context) =>
+    const PersonalEmailVerificationPage();
+Widget _buildPersonalDetailsPage(BuildContext context) =>
+    const PersonalDetailsPage();
+Widget _buildCorporateEmailVerificationPage(BuildContext context) =>
+    const CorporateEmailVerificationPage();
 
 class OnboardingFlow extends ConsumerStatefulWidget {
   const OnboardingFlow({super.key});
@@ -20,75 +46,30 @@ class OnboardingFlow extends ConsumerStatefulWidget {
 }
 
 class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
-  final _formKey = GlobalKey<FormState>();
-  int _step = 0;
   bool _busy = false;
 
-  final _phoneController = TextEditingController();
-  final _otpController = TextEditingController();
-  final _linkedinController = TextEditingController();
-  final _emailController = TextEditingController();
-
-  @override
-  void dispose() {
-    _phoneController.dispose();
-    _otpController.dispose();
-    _linkedinController.dispose();
-    _emailController.dispose();
-    super.dispose();
-  }
-
-  Future<void> _continue() async {
-    if (!(_formKey.currentState?.validate() ?? false)) return;
-
-    final auth = ref.read(authServiceProvider);
+  Future<void> _continueWithLinkedIn() async {
+    if (_busy) return; // guards against a slow tap double-firing the flow
     setState(() => _busy = true);
 
     try {
-      switch (_step) {
-        case 1:
-          await auth.verifyPhoneOtp(
-            phoneNumber: _phoneController.text.trim(),
-            code: _otpController.text.trim(),
-          );
-          if (mounted) {
-            showSnack(
-              context,
-              'Phone verified successfully.',
-              type: ToastType.success,
-            );
-          }
-        case 2:
-          await auth.connectLinkedIn(_linkedinController.text.trim());
-          if (mounted) {
-            showSnack(context, 'LinkedIn connected.', type: ToastType.success);
-          }
-        case 3:
-          await auth.verifyCorporateEmail(_emailController.text.trim());
-          if (mounted) {
-            showSnack(
-              context,
-              'Work email verified. Welcome aboard.',
-              type: ToastType.success,
-            );
-          }
-      }
-
+      await ref.read(authSessionProvider.notifier).signInWithLinkedIn();
       if (!mounted) return;
-
-      if (_step == 3) {
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(builder: (context) => const AppShell()),
-        );
-      } else {
-        setState(() => _step += 1);
-      }
-    } catch (error) {
+      await _runVerificationSequence();
+      if (!mounted) return;
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(builder: (context) => const AppShell()),
+      );
+    } catch (error, stackTrace) {
+      // Logged so the underlying cause is visible in the console — the
+      // toast itself only ever shows a user-safe message, never raw
+      // exception detail.
+      debugPrint('signInWithLinkedIn failed: $error\n$stackTrace');
       if (mounted) {
         showSnack(
           context,
-          error is FormatException
+          error is AuthException
               ? error.message
               : 'Something went wrong. Please try again.',
           type: ToastType.error,
@@ -96,6 +77,18 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
       }
     } finally {
       if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// Pushes each verification screen in turn, awaiting the pop before
+  /// pushing the next one — every screen pops itself (Skip or a
+  /// successful verify), so by the time this returns we're back on
+  /// [OnboardingFlow] with the whole sequence behind us, ready for the
+  /// final `pushReplacement` to [AppShell].
+  Future<void> _runVerificationSequence() async {
+    for (final buildScreen in _verificationSequence) {
+      if (!mounted) return;
+      await Navigator.push(context, MaterialPageRoute(builder: buildScreen));
     }
   }
 
@@ -108,57 +101,24 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
         child: SafeArea(
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            child: Form(
-              key: _formKey,
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  _buildProgress(),
-                  const SizedBox(height: 40),
-                  Expanded(child: _buildCurrentStep()),
-                  const SizedBox(height: 24),
-                  GradientButton(
-                    label: _step == 3 ? 'ENTER PLATFORM' : 'CONTINUE',
-                    isLoading: _busy,
-                    onPressed: _continue,
-                  ),
-                ],
-              ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Expanded(child: _welcomeStep()),
+                const SizedBox(height: 16),
+                _trustMicrocopy(),
+                const SizedBox(height: 20),
+                GradientButton(
+                  label: 'CONTINUE WITH LINKEDIN',
+                  isLoading: _busy,
+                  onPressed: _continueWithLinkedIn,
+                ),
+              ],
             ),
           ),
         ),
       ),
     );
-  }
-
-  Widget _buildProgress() {
-    return Row(
-      children: List.generate(4, (index) {
-        return Expanded(
-          child: Container(
-            height: 4,
-            margin: const EdgeInsets.only(right: 8),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(2),
-              color: index <= _step ? AppPalette.candyBlue : AppPalette.card,
-            ),
-          ),
-        );
-      }),
-    );
-  }
-
-  Widget _buildCurrentStep() {
-    switch (_step) {
-      case 0:
-        return _welcomeStep();
-      case 1:
-        return _phoneStep();
-      case 2:
-        return _linkedinStep();
-      default:
-        return _emailStep();
-    }
   }
 
   Widget _welcomeStep() {
@@ -208,110 +168,27 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     );
   }
 
-  Widget _phoneStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionLabel('STEP 1 OF 3'),
-        const SizedBox(height: 12),
-        const Text(
-          'Verify your phone',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: AppPalette.textPrimary,
-          ),
+  /// Trust reassurance directly above the auth button — states why LinkedIn
+  /// specifically (identity, not just an OAuth checkbox) and pre-empts the
+  /// most common worry about connecting it. The "never post on your behalf
+  /// or access your connections" claim must stay accurate to the actual
+  /// requested scope (`openid profile email` in `http_auth_service.dart`,
+  /// which grants neither) — revisit this copy in the same PR if that scope
+  /// ever changes.
+  Widget _trustMicrocopy() {
+    return SizedBox(
+      width: double.infinity,
+      child: Text(
+        'We verify your LinkedIn to confirm you’re a real, working '
+        'professional — the foundation of a safer community. We never '
+        'post on your behalf or access your connections.',
+        textAlign: TextAlign.center,
+        style: TextStyle(
+          fontSize: 11,
+          color: AppPalette.textSecondary.withValues(alpha: 0.85),
+          height: 1.4,
         ),
-        const SizedBox(height: 8),
-        const Text(
-          'We use this to ensure our community remains safe and free of bots.',
-          style: TextStyle(fontSize: 14, color: AppPalette.textSecondary),
-        ),
-        const SizedBox(height: 32),
-        GlassTextField(
-          controller: _phoneController,
-          icon: Icons.phone_android,
-          hint: '+94 7X XXX XXXX',
-          keyboardType: TextInputType.phone,
-          maxLength: 16,
-          validator: (value) => Validators.phone(value ?? ''),
-        ),
-        const SizedBox(height: 16),
-        GlassTextField(
-          controller: _otpController,
-          icon: Icons.sms_outlined,
-          hint: '• • • • • •',
-          keyboardType: TextInputType.number,
-          maxLength: 6,
-          textAlign: TextAlign.center,
-          letterSpacing: 8,
-          validator: (value) => Validators.otp(value ?? ''),
-        ),
-      ],
-    );
-  }
-
-  Widget _linkedinStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionLabel('STEP 2 OF 3'),
-        const SizedBox(height: 12),
-        const Text(
-          'Connect LinkedIn',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: AppPalette.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'This proves your professional identity and helps us match you with relevant peers.',
-          style: TextStyle(fontSize: 14, color: AppPalette.textSecondary),
-        ),
-        const SizedBox(height: 32),
-        GlassTextField(
-          controller: _linkedinController,
-          icon: Icons.work_outline,
-          hint: 'linkedin.com/in/your-profile',
-          keyboardType: TextInputType.url,
-          maxLength: 100,
-          validator: (value) => Validators.linkedin(value ?? ''),
-        ),
-      ],
-    );
-  }
-
-  Widget _emailStep() {
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: [
-        const SectionLabel('STEP 3 OF 3'),
-        const SizedBox(height: 12),
-        const Text(
-          'Professional Email',
-          style: TextStyle(
-            fontSize: 24,
-            fontWeight: FontWeight.w700,
-            color: AppPalette.textPrimary,
-          ),
-        ),
-        const SizedBox(height: 8),
-        const Text(
-          'Enter your corporate email to unlock Level 2 Trust. (No Gmail or Yahoo).',
-          style: TextStyle(fontSize: 14, color: AppPalette.textSecondary),
-        ),
-        const SizedBox(height: 32),
-        GlassTextField(
-          controller: _emailController,
-          icon: Icons.email_outlined,
-          hint: 'name@company.com',
-          keyboardType: TextInputType.emailAddress,
-          maxLength: 254,
-          validator: (value) => Validators.corporateEmail(value ?? ''),
-        ),
-      ],
+      ),
     );
   }
 }

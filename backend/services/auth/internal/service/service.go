@@ -10,11 +10,14 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"log/slog"
 	"time"
 
+	"github.com/professional-connections/backend/services/auth/internal/email"
 	"github.com/professional-connections/backend/services/auth/internal/events"
 	"github.com/professional-connections/backend/services/auth/internal/linkedin"
 	"github.com/professional-connections/backend/services/auth/internal/repository"
+	"github.com/professional-connections/backend/services/auth/internal/sms"
 	"github.com/professional-connections/backend/shared/apperror"
 	sharedjwt "github.com/professional-connections/backend/shared/jwt"
 	authv1 "github.com/professional-connections/backend/shared/proto/auth/v1"
@@ -32,27 +35,36 @@ const RefreshTokenTTL = 30 * 24 * time.Hour
 type Service struct {
 	authv1.UnimplementedAuthServiceServer
 
-	users         repository.UserRepository
-	refreshTokens repository.RefreshTokenRepository
-	linkedin      *linkedin.Client
-	signer        *sharedjwt.Signer
-	events        events.Publisher
+	users             repository.UserRepository
+	refreshTokens     repository.RefreshTokenRepository
+	verificationCodes repository.VerificationCodeRepository
+	linkedin          *linkedin.Client
+	signer            *sharedjwt.Signer
+	events            events.Publisher
+	email             email.EmailSender
+	sms               sms.SmsSender
 }
 
 // New constructs a Service.
 func New(
 	users repository.UserRepository,
 	refreshTokens repository.RefreshTokenRepository,
+	verificationCodes repository.VerificationCodeRepository,
 	linkedinClient *linkedin.Client,
 	signer *sharedjwt.Signer,
 	publisher events.Publisher,
+	emailSender email.EmailSender,
+	smsSender sms.SmsSender,
 ) *Service {
 	return &Service{
-		users:         users,
-		refreshTokens: refreshTokens,
-		linkedin:      linkedinClient,
-		signer:        signer,
-		events:        publisher,
+		users:             users,
+		refreshTokens:     refreshTokens,
+		verificationCodes: verificationCodes,
+		linkedin:          linkedinClient,
+		signer:            signer,
+		events:            publisher,
+		email:             emailSender,
+		sms:               smsSender,
 	}
 }
 
@@ -61,15 +73,21 @@ func New(
 func (s *Service) CompleteLinkedInOnboarding(
 	ctx context.Context, req *authv1.CompleteLinkedInOnboardingRequest,
 ) (*authv1.SessionResponse, error) {
-	token, err := s.linkedin.ExchangeCode(ctx, req.GetAuthorizationCode(), req.GetPkceVerifier(), req.GetRedirectUri())
+	token, err := s.linkedin.ExchangeCode(ctx, req.GetAuthorizationCode(), req.GetRedirectUri())
 	if err != nil {
-		return nil, apperror.ToGRPCStatus(fmt.Errorf("linkedin code exchange: %w: %w", apperror.ErrInvalidInput, err))
+		// err embeds LinkedIn's raw upstream response body (linkedin.Client's
+		// error strings) — logged here with full detail, but never handed to
+		// the client: that body is untrusted-boundary-crossing implementation
+		// detail, not something safe to echo back over the REST API.
+		slog.Default().Error("linkedin code exchange failed", "error", err)
+		return nil, apperror.ToGRPCStatus(fmt.Errorf("linkedin sign-in failed, please try again: %w", apperror.ErrInvalidInput))
 	}
 
 	// token is discarded after this call — never persisted (ADR-011).
 	info, err := s.linkedin.FetchUserInfo(ctx, token)
 	if err != nil {
-		return nil, apperror.ToGRPCStatus(fmt.Errorf("linkedin userinfo: %w: %w", apperror.ErrInvalidInput, err))
+		slog.Default().Error("linkedin userinfo fetch failed", "error", err)
+		return nil, apperror.ToGRPCStatus(fmt.Errorf("linkedin sign-in failed, please try again: %w", apperror.ErrInvalidInput))
 	}
 
 	isNewUser := false
@@ -150,6 +168,8 @@ func (s *Service) RefreshSession(
 		AccessToken:                 accessToken,
 		RefreshToken:                newRawToken,
 		AccessTokenExpiresInSeconds: int64(sharedjwt.AccessTokenTTL.Seconds()),
+		FullName:                    user.FullName,
+		ProfilePhotoUrl:             user.ProfilePhotoURL,
 	}, nil
 }
 
@@ -186,6 +206,8 @@ func (s *Service) issueSession(ctx context.Context, user repository.User) (*auth
 		AccessToken:                 accessToken,
 		RefreshToken:                rawToken,
 		AccessTokenExpiresInSeconds: int64(sharedjwt.AccessTokenTTL.Seconds()),
+		FullName:                    user.FullName,
+		ProfilePhotoUrl:             user.ProfilePhotoURL,
 	}, nil
 }
 

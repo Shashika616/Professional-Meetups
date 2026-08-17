@@ -14,4 +14,11 @@ var (
 	ErrUnauthorized = errors.New("unauthorized")
 	ErrConflict     = errors.New("conflict")
 	ErrInternal     = errors.New("internal error")
+	// ErrRateLimited is distinct from the gateway's IP-based rate limiter
+	// (middleware/ratelimit.go) — this is for a server-enforced per-action
+	// cooldown (e.g. the Level 2/3 verification addendum's 1-minute
+	// resend-code timer) that a service layer needs to signal explicitly,
+	// not a request-volume limit applied uniformly at the edge. Both map to
+	// the same HTTP 429, which is the correct shared signal either way.
+	ErrRateLimited = errors.New("rate limited")
 )

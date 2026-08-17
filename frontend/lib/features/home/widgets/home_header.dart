@@ -7,9 +7,10 @@ import 'package:professional_connections_platform/core/widgets/app_icon.dart';
 import 'package:professional_connections_platform/core/widgets/professional_avatar.dart';
 
 class HomeHeader extends StatelessWidget {
-  const HomeHeader({super.key, required this.userName});
+  const HomeHeader({super.key, required this.userName, this.imageUrl});
 
   final String userName;
+  final String? imageUrl;
 
   @override
   Widget build(BuildContext context) {
@@ -53,7 +54,7 @@ class HomeHeader extends StatelessWidget {
             ),
           ),
           const SizedBox(width: 12),
-          ProfessionalAvatar(size: 44, name: userName),
+          ProfessionalAvatar(size: 44, name: userName, imageUrl: imageUrl),
         ],
       ),
     );

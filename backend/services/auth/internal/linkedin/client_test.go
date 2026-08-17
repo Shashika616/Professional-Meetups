@@ -58,7 +58,7 @@ func TestExchangeCode(t *testing.T) {
 
 			client := New(Config{ClientID: "cid", ClientSecret: "csecret"}, WithTokenURL(server.URL))
 
-			got, err := client.ExchangeCode(context.Background(), "auth-code", "pkce-verifier", "app://callback")
+			got, err := client.ExchangeCode(context.Background(), "auth-code", "app://callback")
 			if tt.wantErr {
 				if err == nil {
 					t.Fatal("ExchangeCode() returned nil error, want error")
@@ -78,8 +78,12 @@ func TestExchangeCode(t *testing.T) {
 			if gotForm.Get("code") != "auth-code" {
 				t.Errorf("code = %q, want auth-code", gotForm.Get("code"))
 			}
-			if gotForm.Get("code_verifier") != "pkce-verifier" {
-				t.Errorf("code_verifier = %q, want pkce-verifier", gotForm.Get("code_verifier"))
+			// Regression guard: LinkedIn's Sign In with LinkedIn / OpenID
+			// Connect product rejects the exchange with 401 invalid_client
+			// when a code_verifier is present (confirmed via direct testing
+			// against LinkedIn's real endpoint) — this must never be sent.
+			if gotForm.Has("code_verifier") {
+				t.Errorf("code_verifier was sent (%q) — LinkedIn rejects this product's exchange when it's present", gotForm.Get("code_verifier"))
 			}
 			if gotForm.Get("redirect_uri") != "app://callback" {
 				t.Errorf("redirect_uri = %q, want app://callback", gotForm.Get("redirect_uri"))

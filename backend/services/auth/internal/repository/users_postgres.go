@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
@@ -70,6 +71,85 @@ func (r *postgresUserRepository) Create(ctx context.Context, u NewUser) (User, e
 	return userFromRow(row), nil
 }
 
+func (r *postgresUserRepository) UpdatePhoneNumber(ctx context.Context, userID, phoneNumber string, trustLevel int) (User, error) {
+	parsed, err := uuid.Parse(userID)
+	if err != nil {
+		return User{}, fmt.Errorf("repository: invalid user id %q: %w", userID, apperror.ErrInvalidInput)
+	}
+
+	row, err := r.q.UpdateUserPhoneNumber(ctx, sqlcgen.UpdateUserPhoneNumberParams{
+		ID:          parsed,
+		PhoneNumber: textOrNull(phoneNumber),
+		TrustLevel:  int16(trustLevel),
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
+			return User{}, fmt.Errorf("repository: phone number already verified on a different account: %w", apperror.ErrConflict)
+		}
+		return User{}, fmt.Errorf("repository: update user phone number: %w", err)
+	}
+	return userFromRow(row), nil
+}
+
+func (r *postgresUserRepository) UpdatePersonalEmail(ctx context.Context, userID, personalEmail string, trustLevel int) (User, error) {
+	parsed, err := uuid.Parse(userID)
+	if err != nil {
+		return User{}, fmt.Errorf("repository: invalid user id %q: %w", userID, apperror.ErrInvalidInput)
+	}
+
+	row, err := r.q.UpdateUserPersonalEmail(ctx, sqlcgen.UpdateUserPersonalEmailParams{
+		ID:            parsed,
+		PersonalEmail: textOrNull(personalEmail),
+		TrustLevel:    int16(trustLevel),
+	})
+	if err != nil {
+		var pgErr *pgconn.PgError
+		if errors.As(err, &pgErr) && pgErr.Code == "23505" { // unique_violation
+			return User{}, fmt.Errorf("repository: personal email already verified on a different account: %w", apperror.ErrConflict)
+		}
+		return User{}, fmt.Errorf("repository: update user personal email: %w", err)
+	}
+	return userFromRow(row), nil
+}
+
+func (r *postgresUserRepository) UpdatePersonalDetails(ctx context.Context, userID, legalName, address string, trustLevel int) (User, error) {
+	parsed, err := uuid.Parse(userID)
+	if err != nil {
+		return User{}, fmt.Errorf("repository: invalid user id %q: %w", userID, apperror.ErrInvalidInput)
+	}
+
+	row, err := r.q.UpdateUserPersonalDetails(ctx, sqlcgen.UpdateUserPersonalDetailsParams{
+		ID:         parsed,
+		LegalName:  textOrNull(legalName),
+		Address:    textOrNull(address),
+		TrustLevel: int16(trustLevel),
+	})
+	if err != nil {
+		return User{}, fmt.Errorf("repository: update user personal details: %w", err)
+	}
+	return userFromRow(row), nil
+}
+
+func (r *postgresUserRepository) UpdateWorkEmailVerified(ctx context.Context, userID, companyDomain string, verified bool, verifiedAt time.Time, trustLevel int) (User, error) {
+	parsed, err := uuid.Parse(userID)
+	if err != nil {
+		return User{}, fmt.Errorf("repository: invalid user id %q: %w", userID, apperror.ErrInvalidInput)
+	}
+
+	row, err := r.q.UpdateUserWorkEmailVerified(ctx, sqlcgen.UpdateUserWorkEmailVerifiedParams{
+		ID:                  parsed,
+		CompanyDomain:       textOrNull(companyDomain),
+		WorkEmailVerified:   verified,
+		WorkEmailVerifiedAt: toTimestamptz(verifiedAt),
+		TrustLevel:          int16(trustLevel),
+	})
+	if err != nil {
+		return User{}, fmt.Errorf("repository: update user work email verified: %w", err)
+	}
+	return userFromRow(row), nil
+}
+
 func userFromRow(row sqlcgen.User) User {
 	return User{
 		ID:              row.ID.String(),
@@ -81,5 +161,13 @@ func userFromRow(row sqlcgen.User) User {
 		AccountStatus:   AccountStatus(row.AccountStatus),
 		CreatedAt:       timestamptzOrZero(row.CreatedAt),
 		UpdatedAt:       timestamptzOrZero(row.UpdatedAt),
+
+		PhoneNumber:         textOrEmpty(row.PhoneNumber),
+		PersonalEmail:       textOrEmpty(row.PersonalEmail),
+		LegalName:           textOrEmpty(row.LegalName),
+		Address:             textOrEmpty(row.Address),
+		CompanyDomain:       textOrEmpty(row.CompanyDomain),
+		WorkEmailVerified:   row.WorkEmailVerified,
+		WorkEmailVerifiedAt: timePtrOrNil(row.WorkEmailVerifiedAt),
 	}
 }

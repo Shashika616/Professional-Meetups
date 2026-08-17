@@ -20,6 +20,18 @@ type Config struct {
 	LinkedInClientID     string
 	LinkedInClientSecret string
 	LinkedInRedirectURI  string
+
+	// Twilio/Resend credentials are deliberately NOT in the required list
+	// below — the Level 2/3 verification addendum (ADR-012) falls back to
+	// LoggingSmsSender/LoggingEmailSender when these are empty, so local
+	// dev/tests keep working before Shashika fills in real credentials for
+	// either or both. main.go decides which sender to construct based on
+	// whether each purpose's full credential set is non-empty.
+	TwilioAccountSID  string
+	TwilioAuthToken   string
+	TwilioPhoneNumber string
+	ResendAPIKey      string
+	ResendFromEmail   string
 }
 
 // Load reads Config from the environment, failing fast if any required
@@ -33,6 +45,12 @@ func Load() (Config, error) {
 		LinkedInClientID:     os.Getenv("LINKEDIN_CLIENT_ID"),
 		LinkedInClientSecret: os.Getenv("LINKEDIN_CLIENT_SECRET"),
 		LinkedInRedirectURI:  os.Getenv("LINKEDIN_REDIRECT_URI"),
+
+		TwilioAccountSID:  os.Getenv("TWILIO_ACCOUNT_SID"),
+		TwilioAuthToken:   os.Getenv("TWILIO_AUTH_TOKEN"),
+		TwilioPhoneNumber: os.Getenv("TWILIO_PHONE_NUMBER"),
+		ResendAPIKey:      os.Getenv("RESEND_API_KEY"),
+		ResendFromEmail:   os.Getenv("RESEND_FROM_EMAIL"),
 	}
 
 	required := []struct {

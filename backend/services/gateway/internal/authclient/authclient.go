@@ -32,15 +32,45 @@ type Session struct {
 	RefreshToken                string
 	AccessTokenExpiresInSeconds int64
 	IsNewUser                   bool
+	FullName                    string
+	ProfilePhotoURL             string
 }
 
-// Client is the gateway's view of the auth service.
+// Profile is this package's own representation of GetProfile's response —
+// booleans/derived fields only, never a raw phone number or email address
+// (backend/PLAN.md's Level 2/3 addendum, Step E).
+type Profile struct {
+	UserID                  string
+	FullName                string
+	ProfilePhotoURL         string
+	TrustLevel              int
+	PhoneVerified           bool
+	PersonalEmailVerified   bool
+	PersonalDetailsComplete bool
+	CompanyDomain           string
+	WorkEmailVerified       bool
+}
+
+// Client is the gateway's view of the auth service. Every Level 2/3
+// verification method (backend/PLAN.md's matching addendum) takes userID
+// explicitly, set by the caller (internal/handlers) from the verified
+// JWT — never a client-supplied value.
 type Client interface {
-	CompleteLinkedInOnboarding(ctx context.Context, authorizationCode, pkceVerifier, redirectURI string) (Session, error)
+	CompleteLinkedInOnboarding(ctx context.Context, authorizationCode, redirectURI string) (Session, error)
 	RefreshSession(ctx context.Context, refreshToken string) (Session, error)
 	// RevokeSession is idempotent — revoking an already-revoked or unknown
 	// token is not an error.
 	RevokeSession(ctx context.Context, refreshToken string) error
+
+	StartPhoneVerification(ctx context.Context, userID, phoneNumber string) (resendAfterSeconds int32, err error)
+	VerifyPhoneCode(ctx context.Context, userID, phoneNumber, code string) (Session, error)
+	StartPersonalEmailVerification(ctx context.Context, userID, email string) (resendAfterSeconds int32, err error)
+	VerifyPersonalEmailCode(ctx context.Context, userID, email, code string) (Session, error)
+	SubmitPersonalDetails(ctx context.Context, userID, legalName, address string) (Session, error)
+	StartCorporateEmailVerification(ctx context.Context, userID, email string) (resendAfterSeconds int32, err error)
+	VerifyCorporateEmailCode(ctx context.Context, userID, email, code string) (Session, error)
+	GetProfile(ctx context.Context, userID string) (Profile, error)
+
 	Close() error
 }
 
@@ -80,11 +110,10 @@ func (c *grpcClient) Close() error {
 }
 
 func (c *grpcClient) CompleteLinkedInOnboarding(
-	ctx context.Context, authorizationCode, pkceVerifier, redirectURI string,
+	ctx context.Context, authorizationCode, redirectURI string,
 ) (Session, error) {
 	resp, err := c.client.CompleteLinkedInOnboarding(ctx, &authv1.CompleteLinkedInOnboardingRequest{
 		AuthorizationCode: authorizationCode,
-		PkceVerifier:      pkceVerifier,
 		RedirectUri:       redirectURI,
 	})
 	if err != nil {
@@ -106,6 +135,111 @@ func (c *grpcClient) RevokeSession(ctx context.Context, refreshToken string) err
 	return err
 }
 
+func (c *grpcClient) StartPhoneVerification(ctx context.Context, userID, phoneNumber string) (int32, error) {
+	resp, err := c.client.StartPhoneVerification(ctx, &authv1.StartVerificationRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_PHONE,
+		Target:  phoneNumber,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetResendAfterSeconds(), nil
+}
+
+func (c *grpcClient) VerifyPhoneCode(ctx context.Context, userID, phoneNumber, code string) (Session, error) {
+	resp, err := c.client.VerifyPhoneCode(ctx, &authv1.VerifyCodeRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_PHONE,
+		Target:  phoneNumber,
+		Code:    code,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) StartPersonalEmailVerification(ctx context.Context, userID, email string) (int32, error) {
+	resp, err := c.client.StartPersonalEmailVerification(ctx, &authv1.StartVerificationRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_PERSONAL_EMAIL,
+		Target:  email,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetResendAfterSeconds(), nil
+}
+
+func (c *grpcClient) VerifyPersonalEmailCode(ctx context.Context, userID, email, code string) (Session, error) {
+	resp, err := c.client.VerifyPersonalEmailCode(ctx, &authv1.VerifyCodeRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_PERSONAL_EMAIL,
+		Target:  email,
+		Code:    code,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) SubmitPersonalDetails(ctx context.Context, userID, legalName, address string) (Session, error) {
+	resp, err := c.client.SubmitPersonalDetails(ctx, &authv1.SubmitPersonalDetailsRequest{
+		UserId:    userID,
+		LegalName: legalName,
+		Address:   address,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) StartCorporateEmailVerification(ctx context.Context, userID, email string) (int32, error) {
+	resp, err := c.client.StartCorporateEmailVerification(ctx, &authv1.StartVerificationRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_CORPORATE_EMAIL,
+		Target:  email,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetResendAfterSeconds(), nil
+}
+
+func (c *grpcClient) VerifyCorporateEmailCode(ctx context.Context, userID, email, code string) (Session, error) {
+	resp, err := c.client.VerifyCorporateEmailCode(ctx, &authv1.VerifyCodeRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_CORPORATE_EMAIL,
+		Target:  email,
+		Code:    code,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) GetProfile(ctx context.Context, userID string) (Profile, error) {
+	resp, err := c.client.GetProfile(ctx, &authv1.GetProfileRequest{UserId: userID})
+	if err != nil {
+		return Profile{}, err
+	}
+	return Profile{
+		UserID:                  resp.GetUserId(),
+		FullName:                resp.GetFullName(),
+		ProfilePhotoURL:         resp.GetProfilePhotoUrl(),
+		TrustLevel:              int(resp.GetTrustLevel()),
+		PhoneVerified:           resp.GetPhoneVerified(),
+		PersonalEmailVerified:   resp.GetPersonalEmailVerified(),
+		PersonalDetailsComplete: resp.GetPersonalDetailsComplete(),
+		CompanyDomain:           resp.GetCompanyDomain(),
+		WorkEmailVerified:       resp.GetWorkEmailVerified(),
+	}, nil
+}
+
 func sessionFromProto(resp *authv1.SessionResponse) Session {
 	return Session{
 		UserID:                      resp.GetUserId(),
@@ -113,5 +247,7 @@ func sessionFromProto(resp *authv1.SessionResponse) Session {
 		RefreshToken:                resp.GetRefreshToken(),
 		AccessTokenExpiresInSeconds: resp.GetAccessTokenExpiresInSeconds(),
 		IsNewUser:                   resp.GetIsNewUser(),
+		FullName:                    resp.GetFullName(),
+		ProfilePhotoURL:             resp.GetProfilePhotoUrl(),
 	}
 }

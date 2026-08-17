@@ -29,6 +29,50 @@ func TestLoadSucceedsWhenAllRequiredVarsSet(t *testing.T) {
 	}
 }
 
+// TestLoadSucceedsWithTwilioAndResendUnset guards the Level 2/3 addendum's
+// fallback contract: TWILIO_*/RESEND_* must stay optional (the empty case
+// is what triggers LoggingSmsSender/LoggingEmailSender in main.go), so
+// Load() must not fail-fast on them the way it does for the required vars.
+func TestLoadSucceedsWithTwilioAndResendUnset(t *testing.T) {
+	setAllRequired(t)
+	for _, v := range []string{
+		"TWILIO_ACCOUNT_SID", "TWILIO_AUTH_TOKEN", "TWILIO_PHONE_NUMBER",
+		"RESEND_API_KEY", "RESEND_FROM_EMAIL",
+	} {
+		t.Setenv(v, "")
+	}
+
+	if _, err := Load(); err != nil {
+		t.Fatalf("Load() returned error with Twilio/Resend vars unset, want success: %v", err)
+	}
+}
+
+func TestLoadReadsTwilioAndResendWhenSet(t *testing.T) {
+	setAllRequired(t)
+	t.Setenv("TWILIO_ACCOUNT_SID", "AC123")
+	t.Setenv("TWILIO_AUTH_TOKEN", "token")
+	t.Setenv("TWILIO_PHONE_NUMBER", "+14155551234")
+	t.Setenv("RESEND_API_KEY", "re_123")
+	t.Setenv("RESEND_FROM_EMAIL", "onboarding@resend.dev")
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() returned error: %v", err)
+	}
+	if cfg.TwilioAccountSID != "AC123" {
+		t.Errorf("TwilioAccountSID = %q, want %q", cfg.TwilioAccountSID, "AC123")
+	}
+	if cfg.TwilioPhoneNumber != "+14155551234" {
+		t.Errorf("TwilioPhoneNumber = %q, want %q", cfg.TwilioPhoneNumber, "+14155551234")
+	}
+	if cfg.ResendAPIKey != "re_123" {
+		t.Errorf("ResendAPIKey = %q, want %q", cfg.ResendAPIKey, "re_123")
+	}
+	if cfg.ResendFromEmail != "onboarding@resend.dev" {
+		t.Errorf("ResendFromEmail = %q, want %q", cfg.ResendFromEmail, "onboarding@resend.dev")
+	}
+}
+
 func TestLoadFailsFastOnMissingVar(t *testing.T) {
 	requiredVars := []string{
 		"GRPC_PORT",

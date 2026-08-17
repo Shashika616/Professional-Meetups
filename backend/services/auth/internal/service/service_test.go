@@ -10,6 +10,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,11 +76,10 @@ func TestCompleteLinkedInOnboarding_NewUser(t *testing.T) {
 	users := newFakeUserRepository()
 	tokens := newFakeRefreshTokenRepository()
 	pub := &fakePublisher{}
-	svc := New(users, tokens, li, newTestSigner(t), pub)
+	svc := New(users, tokens, newFakeVerificationCodeRepository(), li, newTestSigner(t), pub, &fakeEmailSender{}, &fakeSmsSender{})
 
 	resp, err := svc.CompleteLinkedInOnboarding(context.Background(), &authv1.CompleteLinkedInOnboardingRequest{
 		AuthorizationCode: "auth-code",
-		PkceVerifier:      "verifier",
 		RedirectUri:       "app://callback",
 	})
 	if err != nil {
@@ -100,6 +100,12 @@ func TestCompleteLinkedInOnboarding_NewUser(t *testing.T) {
 	}
 	if resp.GetAccessTokenExpiresInSeconds() != int64(sharedjwt.AccessTokenTTL.Seconds()) {
 		t.Errorf("AccessTokenExpiresInSeconds = %d, want %d", resp.GetAccessTokenExpiresInSeconds(), int64(sharedjwt.AccessTokenTTL.Seconds()))
+	}
+	if resp.GetFullName() != "Ada Lovelace" {
+		t.Errorf("FullName = %q, want %q", resp.GetFullName(), "Ada Lovelace")
+	}
+	if resp.GetProfilePhotoUrl() != "https://example.com/p.jpg" {
+		t.Errorf("ProfilePhotoUrl = %q, want %q", resp.GetProfilePhotoUrl(), "https://example.com/p.jpg")
 	}
 
 	if len(users.createCalls) != 1 {
@@ -124,7 +130,7 @@ func TestCompleteLinkedInOnboarding_ExistingUser(t *testing.T) {
 	users := newFakeUserRepository()
 	tokens := newFakeRefreshTokenRepository()
 	pub := &fakePublisher{}
-	svc := New(users, tokens, li, newTestSigner(t), pub)
+	svc := New(users, tokens, newFakeVerificationCodeRepository(), li, newTestSigner(t), pub, &fakeEmailSender{}, &fakeSmsSender{})
 
 	// Pre-seed the user as if they'd onboarded before.
 	if _, err := users.Create(context.Background(), fakeNewUser("li-sub-123")); err != nil {
@@ -133,7 +139,6 @@ func TestCompleteLinkedInOnboarding_ExistingUser(t *testing.T) {
 
 	resp, err := svc.CompleteLinkedInOnboarding(context.Background(), &authv1.CompleteLinkedInOnboardingRequest{
 		AuthorizationCode: "auth-code",
-		PkceVerifier:      "verifier",
 		RedirectUri:       "app://callback",
 	})
 	if err != nil {
@@ -159,11 +164,10 @@ func TestCompleteLinkedInOnboarding_LinkedInExchangeFails(t *testing.T) {
 	defer server.Close()
 
 	li := linkedin.New(linkedin.Config{ClientID: "cid", ClientSecret: "csecret"}, linkedin.WithTokenURL(server.URL))
-	svc := New(newFakeUserRepository(), newFakeRefreshTokenRepository(), li, newTestSigner(t), &fakePublisher{})
+	svc := New(newFakeUserRepository(), newFakeRefreshTokenRepository(), newFakeVerificationCodeRepository(), li, newTestSigner(t), &fakePublisher{}, &fakeEmailSender{}, &fakeSmsSender{})
 
 	_, err := svc.CompleteLinkedInOnboarding(context.Background(), &authv1.CompleteLinkedInOnboardingRequest{
 		AuthorizationCode: "bad-code",
-		PkceVerifier:      "verifier",
 		RedirectUri:       "app://callback",
 	})
 	if err == nil {
@@ -174,13 +178,46 @@ func TestCompleteLinkedInOnboarding_LinkedInExchangeFails(t *testing.T) {
 	}
 }
 
+// TestCompleteLinkedInOnboarding_LinkedInExchangeFailureDoesNotLeakUpstreamBody
+// guards the security-review fix: LinkedIn's raw token-exchange error body
+// must never reach the client-facing error message, even though it's
+// embedded in the error linkedin.Client returns internally.
+func TestCompleteLinkedInOnboarding_LinkedInExchangeFailureDoesNotLeakUpstreamBody(t *testing.T) {
+	const upstreamBody = `{"error":"invalid_grant","error_description":"the provided authorization grant is invalid, expired, revoked"}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusBadRequest)
+		_, _ = w.Write([]byte(upstreamBody))
+	}))
+	defer server.Close()
+
+	li := linkedin.New(linkedin.Config{ClientID: "cid", ClientSecret: "csecret"}, linkedin.WithTokenURL(server.URL))
+	svc := New(newFakeUserRepository(), newFakeRefreshTokenRepository(), newFakeVerificationCodeRepository(), li, newTestSigner(t), &fakePublisher{}, &fakeEmailSender{}, &fakeSmsSender{})
+
+	_, err := svc.CompleteLinkedInOnboarding(context.Background(), &authv1.CompleteLinkedInOnboardingRequest{
+		AuthorizationCode: "bad-code",
+		RedirectUri:       "app://callback",
+	})
+	if err == nil {
+		t.Fatal("CompleteLinkedInOnboarding() returned nil error, want error")
+	}
+
+	msg := status.Convert(err).Message()
+	if strings.Contains(msg, "invalid_grant") || strings.Contains(msg, "error_description") {
+		t.Errorf("client-facing message leaked LinkedIn's raw response body: %q", msg)
+	}
+	const wantMsg = "linkedin sign-in failed, please try again: invalid input"
+	if msg != wantMsg {
+		t.Errorf("client-facing message = %q, want %q", msg, wantMsg)
+	}
+}
+
 func TestRefreshSession(t *testing.T) {
 	li, closeServer := newTestLinkedInServer(t)
 	defer closeServer()
 
 	users := newFakeUserRepository()
 	tokens := newFakeRefreshTokenRepository()
-	svc := New(users, tokens, li, newTestSigner(t), &fakePublisher{})
+	svc := New(users, tokens, newFakeVerificationCodeRepository(), li, newTestSigner(t), &fakePublisher{}, &fakeEmailSender{}, &fakeSmsSender{})
 
 	user, err := users.Create(context.Background(), fakeNewUser("li-sub-123"))
 	if err != nil {
@@ -206,6 +243,9 @@ func TestRefreshSession(t *testing.T) {
 	if resp.GetUserId() != user.ID {
 		t.Errorf("UserId = %q, want %q", resp.GetUserId(), user.ID)
 	}
+	if resp.GetFullName() != user.FullName {
+		t.Errorf("FullName = %q, want %q", resp.GetFullName(), user.FullName)
+	}
 
 	old := tokens.byID[seeded.ID]
 	if old.ReplacedBy == nil {
@@ -219,7 +259,7 @@ func TestRefreshSession_RejectsAlreadyRotatedToken(t *testing.T) {
 
 	users := newFakeUserRepository()
 	tokens := newFakeRefreshTokenRepository()
-	svc := New(users, tokens, li, newTestSigner(t), &fakePublisher{})
+	svc := New(users, tokens, newFakeVerificationCodeRepository(), li, newTestSigner(t), &fakePublisher{}, &fakeEmailSender{}, &fakeSmsSender{})
 
 	user, _ := users.Create(context.Background(), fakeNewUser("li-sub-123"))
 	rawToken, hash, _ := newRefreshToken()
@@ -245,7 +285,7 @@ func TestRefreshSession_RejectsExpiredToken(t *testing.T) {
 
 	users := newFakeUserRepository()
 	tokens := newFakeRefreshTokenRepository()
-	svc := New(users, tokens, li, newTestSigner(t), &fakePublisher{})
+	svc := New(users, tokens, newFakeVerificationCodeRepository(), li, newTestSigner(t), &fakePublisher{}, &fakeEmailSender{}, &fakeSmsSender{})
 
 	user, _ := users.Create(context.Background(), fakeNewUser("li-sub-123"))
 	rawToken, hash, _ := newRefreshToken()
@@ -264,7 +304,7 @@ func TestRefreshSession_UnknownTokenNotFound(t *testing.T) {
 	li, closeServer := newTestLinkedInServer(t)
 	defer closeServer()
 
-	svc := New(newFakeUserRepository(), newFakeRefreshTokenRepository(), li, newTestSigner(t), &fakePublisher{})
+	svc := New(newFakeUserRepository(), newFakeRefreshTokenRepository(), newFakeVerificationCodeRepository(), li, newTestSigner(t), &fakePublisher{}, &fakeEmailSender{}, &fakeSmsSender{})
 
 	_, err := svc.RefreshSession(context.Background(), &authv1.RefreshSessionRequest{RefreshToken: "never-issued"})
 	if err == nil {
@@ -279,7 +319,7 @@ func TestRevokeSession_IdempotentOnUnknownToken(t *testing.T) {
 	li, closeServer := newTestLinkedInServer(t)
 	defer closeServer()
 
-	svc := New(newFakeUserRepository(), newFakeRefreshTokenRepository(), li, newTestSigner(t), &fakePublisher{})
+	svc := New(newFakeUserRepository(), newFakeRefreshTokenRepository(), newFakeVerificationCodeRepository(), li, newTestSigner(t), &fakePublisher{}, &fakeEmailSender{}, &fakeSmsSender{})
 
 	resp, err := svc.RevokeSession(context.Background(), &authv1.RevokeSessionRequest{RefreshToken: "never-issued"})
 	if err != nil {
@@ -296,7 +336,7 @@ func TestRevokeSession_KnownToken(t *testing.T) {
 
 	users := newFakeUserRepository()
 	tokens := newFakeRefreshTokenRepository()
-	svc := New(users, tokens, li, newTestSigner(t), &fakePublisher{})
+	svc := New(users, tokens, newFakeVerificationCodeRepository(), li, newTestSigner(t), &fakePublisher{}, &fakeEmailSender{}, &fakeSmsSender{})
 
 	user, _ := users.Create(context.Background(), fakeNewUser("li-sub-123"))
 	rawToken, hash, _ := newRefreshToken()
