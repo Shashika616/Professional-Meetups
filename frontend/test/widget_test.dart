@@ -1,9 +1,16 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
 
 import 'package:professional_connections_platform/main.dart';
 
+import 'support/fake_secure_storage_platform.dart';
+
 void main() {
+  setUp(() {
+    FlutterSecureStoragePlatform.instance = FakeSecureStoragePlatform();
+  });
+
   testWidgets('Onboarding smoke test', (WidgetTester tester) async {
     // Build our app and trigger a frame.
     // We must wrap it in ProviderScope because OnboardingFlow uses Riverpod.
@@ -25,6 +32,6 @@ void main() {
     await tester.pump(const Duration(milliseconds: 400));
 
     // Verify that the onboarding welcome screen builds without crashing.
-    expect(find.text('CONTINUE'), findsOneWidget);
+    expect(find.text('CONTINUE WITH LINKEDIN'), findsOneWidget);
   });
 }

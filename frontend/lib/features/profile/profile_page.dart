@@ -1,16 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:professional_connections_platform/core/models/user_profile.dart';
+import 'package:professional_connections_platform/core/providers/app_providers.dart';
 import 'package:professional_connections_platform/core/theme/app_palette.dart';
-import 'package:professional_connections_platform/core/utils/snacks.dart';
 import 'package:professional_connections_platform/core/widgets/glass.dart';
 import 'package:professional_connections_platform/core/widgets/section_label.dart';
 import 'package:professional_connections_platform/core/widgets/professional_avatar.dart';
+import 'package:professional_connections_platform/features/landing/landing_page.dart';
+import 'package:professional_connections_platform/features/verification/corporate_email_verification_page.dart';
+import 'package:professional_connections_platform/features/verification/personal_details_page.dart';
+import 'package:professional_connections_platform/features/verification/personal_email_verification_page.dart';
+import 'package:professional_connections_platform/features/verification/phone_verification_page.dart';
 
-class ProfilePage extends StatelessWidget {
+class ProfilePage extends ConsumerWidget {
   const ProfilePage({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    // The one real verification step this slice has (LinkedIn) — fullName/
+    // profilePhotoUrl/trustLevel come from the one-time linkedin/callback
+    // response, cached in AuthSessionState (see backend/PLAN.md Step 3 /
+    // frontend/PLAN.md Step 3). Null while the session is still loading or
+    // if somehow unauthenticated; the block below falls back sensibly.
+    final profile = ref.watch(authSessionProvider).value?.profile;
+
     return Scaffold(
       backgroundColor: Colors.transparent,
       body: SafeArea(
@@ -18,32 +32,66 @@ class ProfilePage extends StatelessWidget {
           padding: EdgeInsets.zero,
           children: [
             const SizedBox(height: 28),
-            _avatarBlock(),
+            _avatarBlock(profile),
             const SizedBox(height: 22),
-            _statsRow(),
+            _statsRow(profile),
             const SizedBox(height: 28),
             _section(
               'VERIFICATION',
               children: [
-                _Row(
+                _verificationRow(
+                  context,
                   icon: Icons.phone_android,
                   title: 'Phone',
-                  subtitle: 'Not verified',
-                  trailing: _verifyChip(context, 'Phone'),
+                  done: profile?.phoneVerified ?? false,
+                  buildScreen: (context) => const PhoneVerificationPage(),
                 ),
                 const _Divider(),
                 _Row(
                   icon: Icons.work_outline,
                   title: 'LinkedIn',
-                  subtitle: 'Not connected',
-                  trailing: _verifyChip(context, 'LinkedIn'),
+                  // Genuinely conditional on authSessionProvider (via
+                  // `profile`, watched above), not a hardcoded flip — every
+                  // user with a resolved profile signed in with LinkedIn to
+                  // get one (frontend/PLAN.md Step 14), but this must still
+                  // reflect real state rather than assert it unconditionally,
+                  // or it's the same class of staleness bug it replaces. No
+                  // "VERIFY" action to offer either way — sign-in already
+                  // happened, there's nothing to re-verify.
+                  subtitle: profile != null ? 'Connected' : 'Not connected',
+                  trailing: profile != null
+                      ? const Icon(
+                          Icons.check_circle_rounded,
+                          size: 18,
+                          color: AppPalette.verified,
+                        )
+                      : const SizedBox.shrink(),
                 ),
                 const _Divider(),
-                _Row(
+                _verificationRow(
+                  context,
+                  icon: Icons.alternate_email_rounded,
+                  title: 'Personal Email',
+                  done: profile?.personalEmailVerified ?? false,
+                  buildScreen: (context) =>
+                      const PersonalEmailVerificationPage(),
+                ),
+                const _Divider(),
+                _verificationRow(
+                  context,
+                  icon: Icons.badge_outlined,
+                  title: 'Personal Details',
+                  done: profile?.personalDetailsComplete ?? false,
+                  buildScreen: (context) => const PersonalDetailsPage(),
+                ),
+                const _Divider(),
+                _verificationRow(
+                  context,
                   icon: Icons.email_outlined,
                   title: 'Work Email',
-                  subtitle: 'Not verified',
-                  trailing: _verifyChip(context, 'Work email'),
+                  done: profile?.workEmailVerified ?? false,
+                  buildScreen: (context) =>
+                      const CorporateEmailVerificationPage(),
                 ),
               ],
             ),
@@ -89,10 +137,7 @@ class ProfilePage extends StatelessWidget {
             Padding(
               padding: const EdgeInsets.symmetric(horizontal: 20),
               child: GestureDetector(
-                onTap: () => showSnack(
-                  context,
-                  'Sign out will be wired to the auth service.',
-                ),
+                onTap: () => _confirmSignOut(context, ref),
                 child: Glass(
                   radius: 16,
                   tint: AppPalette.danger.withValues(alpha: 0.08),
@@ -119,50 +164,120 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  Widget _avatarBlock() {
+  /// Gates [_signOut] behind an explicit confirm tap — a mis-tap on SIGN
+  /// OUT used to end the session immediately with no way back. Mirrors
+  /// `safety_page.dart`'s SOS confirmation dialog styling (the one existing
+  /// confirm-dialog pattern in this codebase), not a new dialog style.
+  Future<void> _confirmSignOut(BuildContext context, WidgetRef ref) async {
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        backgroundColor: AppPalette.card,
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        title: const Text(
+          'SIGN OUT',
+          style: TextStyle(
+            color: AppPalette.danger,
+            letterSpacing: 1.6,
+            fontSize: 15,
+          ),
+        ),
+        content: const Text(
+          'Sign out of Professional Connections?',
+          style: TextStyle(color: AppPalette.textSecondary, fontSize: 13),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text(
+              'CANCEL',
+              style: TextStyle(color: AppPalette.textSecondary),
+            ),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text(
+              'SIGN OUT',
+              style: TextStyle(
+                color: AppPalette.danger,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+    if (confirmed != true) return;
+    if (!context.mounted) return;
+    await _signOut(context, ref);
+  }
+
+  Future<void> _signOut(BuildContext context, WidgetRef ref) async {
+    // Clears the local session regardless of whether the logout network
+    // call succeeds — see AuthSessionNotifier.signOut.
+    await ref.read(authSessionProvider.notifier).signOut();
+    if (!context.mounted) return;
+    // Clears the nav stack so the back button can't return to AppShell.
+    Navigator.of(context).pushAndRemoveUntil(
+      MaterialPageRoute(builder: (context) => const LandingPage()),
+      (route) => false,
+    );
+  }
+
+  Widget _avatarBlock(UserProfile? profile) {
+    final fullName = profile?.fullName;
+    final displayName = (fullName == null || fullName.isEmpty)
+        ? 'Member'
+        : fullName;
+
     return Center(
       child: Column(
         children: [
-          // The user's own avatar (initials now, real photo later)
-          const ProfessionalAvatar(size: 92, name: 'Shashika Fernando'),
+          ProfessionalAvatar(
+            size: 92,
+            name: fullName,
+            imageUrl: (profile?.profilePhotoUrl.isNotEmpty ?? false)
+                ? profile!.profilePhotoUrl
+                : null,
+          ),
           const SizedBox(height: 14),
-          const Text(
-            'Shashika Fernando',
-            style: TextStyle(
+          Text(
+            displayName,
+            style: const TextStyle(
               fontSize: 20,
               fontWeight: FontWeight.w800,
               color: AppPalette.textPrimary,
               letterSpacing: -0.3,
             ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            'SWE • Colombo',
-            style: TextStyle(
-              fontSize: 12,
-              color: AppPalette.textSecondary.withValues(alpha: 0.9),
-            ),
-          ),
+          // headline (e.g. "SWE • Colombo") has no backend source in this
+          // slice — LinkedIn's OIDC userinfo call doesn't return one, and
+          // there's nowhere else to get it from yet (UserProfile.headline
+          // doc comment). Nothing shown here rather than inventing data.
         ],
       ),
     );
   }
 
-  Widget _statsRow() {
-    return const Padding(
-      padding: EdgeInsets.symmetric(horizontal: 20),
+  Widget _statsRow(UserProfile? profile) {
+    final trustLevel = profile?.trustLevel;
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 20),
       child: Row(
         children: [
-          Expanded(
+          const Expanded(
             child: _StatChip(value: '12', label: 'MEETUPS'),
           ),
-          SizedBox(width: 12),
-          Expanded(
+          const SizedBox(width: 12),
+          const Expanded(
             child: _StatChip(value: '4.9', label: 'RATING'),
           ),
-          SizedBox(width: 12),
+          const SizedBox(width: 12),
           Expanded(
-            child: _StatChip(value: 'L1', label: 'TRUST'),
+            child: _StatChip(
+              value: trustLevel == null ? '—' : 'L$trustLevel',
+              label: 'TRUST',
+            ),
           ),
         ],
       ),
@@ -187,10 +302,41 @@ class ProfilePage extends StatelessWidget {
     );
   }
 
-  Widget _verifyChip(BuildContext context, String name) {
+  /// Builds a Phone/Personal-Email/Personal-Details/Work-Email row: a
+  /// "Verified" check once [UserProfile] (via `profile`, watched in
+  /// [build]) reports it done, otherwise a VERIFY chip that pushes
+  /// [buildScreen] — the exact same screen class the post-LinkedIn
+  /// onboarding sequence uses (`onboarding_flow.dart`'s
+  /// `_verificationSequence`), so there's no second implementation of any
+  /// of these flows for the "reached from Profile" case
+  /// (`frontend/PLAN.md`'s Level 2/3 addendum, Step 6). Reactive: popping
+  /// back here after a successful verify re-renders from the freshly
+  /// updated `authSessionProvider` state (no manual refresh needed).
+  Widget _verificationRow(
+    BuildContext context, {
+    required IconData icon,
+    required String title,
+    required bool done,
+    required WidgetBuilder buildScreen,
+  }) {
+    return _Row(
+      icon: icon,
+      title: title,
+      subtitle: done ? 'Verified' : 'Not verified',
+      trailing: done
+          ? const Icon(
+              Icons.check_circle_rounded,
+              size: 18,
+              color: AppPalette.verified,
+            )
+          : _verifyChip(context, buildScreen),
+    );
+  }
+
+  Widget _verifyChip(BuildContext context, WidgetBuilder buildScreen) {
     return GestureDetector(
       onTap: () =>
-          showSnack(context, '$name verification flow will be built next.'),
+          Navigator.push(context, MaterialPageRoute(builder: buildScreen)),
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 7),
         decoration: BoxDecoration(

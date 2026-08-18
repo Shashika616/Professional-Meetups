@@ -9,9 +9,20 @@ option go_package = "github.com/professional-connections/backend/shared/proto/au
 // gateway translates the public REST API into these calls. See
 // backend/PLAN.md for the REST contract the gateway exposes.
 service AuthService {
-  // Exchanges a LinkedIn OIDC authorization code (obtained via the PKCE flow
-  // the mobile app runs) for a Professional Connections session. Creates the
-  // user record on first login. See docs/04-decisions/adr-011 for why PKCE.
+  // Exchanges a LinkedIn OIDC authorization code for a Professional
+  // Connections session. Creates the user record on first login.
+  //
+  // Deliberately no PKCE code_verifier here despite ADR-011 originally
+  // specifying one: LinkedIn's Sign In with LinkedIn / OpenID Connect
+  // product rejects the token exchange outright when code_challenge/
+  // code_verifier are present (confirmed via manual curl testing against
+  // LinkedIn's real endpoint — identical requests succeed with PKCE
+  // omitted, fail with 401 invalid_client when included; LinkedIn's own
+  // /oauth/v2/accessToken docs don't list code_verifier as a supported
+  // parameter for this product either). Security is still sound without
+  // it: this is a confidential client — the LinkedIn client_secret lives
+  // only in this service, never in the mobile app — which is what PKCE
+  // exists to substitute for on a public client that can't hold a secret.
   rpc CompleteLinkedInOnboarding(CompleteLinkedInOnboardingRequest) returns (SessionResponse);
 
   // Rotates a refresh token for a new access/refresh token pair. The
@@ -22,12 +33,34 @@ service AuthService {
   // Revokes a refresh token (logout). Idempotent — revoking an
   // already-revoked or unknown token is not an error.
   rpc RevokeSession(RevokeSessionRequest) returns (RevokeSessionResponse);
+
+  // Level 2/3 verification (ADR-012, backend/PLAN.md's matching addendum).
+  // Every RPC below requires an authenticated caller — the gateway extracts
+  // user_id from the verified JWT and sets it explicitly on the request; a
+  // client never supplies its own user_id. Verification-completing RPCs
+  // return a fresh SessionResponse (new access token reflecting the
+  // updated trust_level) rather than a bare success ack, so the caller
+  // doesn't show a stale trust level until the next natural token refresh.
+  rpc StartPhoneVerification(StartVerificationRequest) returns (StartVerificationResponse);
+  rpc VerifyPhoneCode(VerifyCodeRequest) returns (SessionResponse);
+  rpc StartPersonalEmailVerification(StartVerificationRequest) returns (StartVerificationResponse);
+  rpc VerifyPersonalEmailCode(VerifyCodeRequest) returns (SessionResponse);
+  rpc SubmitPersonalDetails(SubmitPersonalDetailsRequest) returns (SessionResponse);
+  rpc StartCorporateEmailVerification(StartVerificationRequest) returns (StartVerificationResponse);
+  rpc VerifyCorporateEmailCode(VerifyCodeRequest) returns (SessionResponse);
+  // GetProfile returns everything ProfilePage needs to render real
+  // verification state — booleans/derived fields only, never a raw phone
+  // number or email address (Verification Model § 1's "never reveal a
+  // user's full phone number" rule, extended to personal/corporate email
+  // here too).
+  rpc GetProfile(GetProfileRequest) returns (ProfileResponse);
 }
 
 message CompleteLinkedInOnboardingRequest {
   string authorization_code = 1;
-  string redirect_uri = 2;   // must exactly match the URI used to start the flow
-  string pkce_verifier = 3;  // the PKCE code_verifier the app generated; never transmitted before this point
+  string redirect_uri = 2;  // must exactly match the URI used to start the flow
+  reserved 3;                // was pkce_verifier — see AuthService's comment above for why PKCE was dropped
+  reserved "pkce_verifier";
 }
 
 message SessionResponse {
@@ -36,6 +69,13 @@ message SessionResponse {
   string refresh_token = 3;
   int64 access_token_expires_in_seconds = 4;
   bool is_new_user = 5;
+  // full_name and profile_photo_url are the values captured from LinkedIn's
+  // userinfo response at account creation (see internal/service's
+  // CompleteLinkedInOnboarding) and already persisted on the user row —
+  // returned here because there is no separate GET /v1/users/me endpoint
+  // yet for a client to fetch them from afterward.
+  string full_name = 6;
+  string profile_photo_url = 7;
 }
 
 message RefreshSessionRequest {
@@ -48,4 +88,66 @@ message RevokeSessionRequest {
 
 message RevokeSessionResponse {
   bool success = 1;
+}
+
+// VerificationPurpose is shared across phone/personal-email/corporate-email
+// — one OTP mechanism, three purposes (backend/PLAN.md's addendum, Step
+// C/D), not three separate mechanisms. Redundant with which RPC is called
+// (StartPhoneVerification vs. StartPersonalEmailVerification, etc.) by
+// design — the service layer asserts the two agree, catching a
+// mismatched-purpose client bug rather than silently trusting the RPC
+// choice alone.
+enum VerificationPurpose {
+  VERIFICATION_PURPOSE_UNSPECIFIED = 0;
+  VERIFICATION_PURPOSE_PHONE = 1;
+  VERIFICATION_PURPOSE_PERSONAL_EMAIL = 2;
+  VERIFICATION_PURPOSE_CORPORATE_EMAIL = 3;
+}
+
+message StartVerificationRequest {
+  string user_id = 1;  // set by the gateway from the verified JWT, never client-supplied
+  VerificationPurpose purpose = 2;
+  string target = 3;   // phone number (E.164) or email address to verify
+}
+
+// Intentionally near-empty — never echoes the code, or any indication of
+// whether target already exists on another account (a user-enumeration
+// leak). See backend/ARCHITECTURE.md for the full error-mapping rationale.
+message StartVerificationResponse {
+  int32 resend_after_seconds = 1;
+}
+
+message VerifyCodeRequest {
+  string user_id = 1;
+  VerificationPurpose purpose = 2;
+  string target = 3;   // must match what StartVerification was called with
+  string code = 4;
+}
+
+message SubmitPersonalDetailsRequest {
+  string user_id = 1;
+  string legal_name = 2;
+  string address = 3;
+}
+
+message GetProfileRequest {
+  string user_id = 1;  // set by the gateway from the verified JWT, never client-supplied
+}
+
+// ProfileResponse never carries a raw phone number or email address —
+// booleans/derived fields only (Verification Model § 1's "never reveal a
+// user's full phone number" rule, applied here to personal/corporate email
+// too). full_name/profile_photo_url are already in SessionResponse but
+// repeated here since this is the one endpoint a client can call any time
+// to refresh its whole profile view, not just at sign-in.
+message ProfileResponse {
+  string user_id = 1;
+  string full_name = 2;
+  string profile_photo_url = 3;
+  int32 trust_level = 4;
+  bool phone_verified = 5;
+  bool personal_email_verified = 6;
+  bool personal_details_complete = 7;
+  string company_domain = 8;
+  bool work_email_verified = 9;
 }

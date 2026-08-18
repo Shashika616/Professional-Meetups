@@ -1,0 +1,253 @@
+// Package authclient wraps the generated gRPC client for the auth service.
+// Handlers call this package's typed methods, never the generated stub
+// directly, so gRPC-specific error handling and connection management live
+// in one place.
+package authclient
+
+import (
+	"context"
+	"fmt"
+	"time"
+
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/connectivity"
+	"google.golang.org/grpc/credentials/insecure"
+
+	authv1 "github.com/professional-connections/backend/shared/proto/auth/v1"
+)
+
+// connectTimeout bounds how long New waits for the initial connection to
+// the auth service before failing fast — a service that can't reach its
+// dependencies should crash at startup, not accept traffic and fail every
+// request.
+const connectTimeout = 5 * time.Second
+
+// Session is this package's own representation of an issued session,
+// decoupled from the generated protobuf type — mirrors
+// internal/repository's pattern of not leaking generated types across a
+// boundary.
+type Session struct {
+	UserID                      string
+	AccessToken                 string
+	RefreshToken                string
+	AccessTokenExpiresInSeconds int64
+	IsNewUser                   bool
+	FullName                    string
+	ProfilePhotoURL             string
+}
+
+// Profile is this package's own representation of GetProfile's response —
+// booleans/derived fields only, never a raw phone number or email address
+// (backend/PLAN.md's Level 2/3 addendum, Step E).
+type Profile struct {
+	UserID                  string
+	FullName                string
+	ProfilePhotoURL         string
+	TrustLevel              int
+	PhoneVerified           bool
+	PersonalEmailVerified   bool
+	PersonalDetailsComplete bool
+	CompanyDomain           string
+	WorkEmailVerified       bool
+}
+
+// Client is the gateway's view of the auth service. Every Level 2/3
+// verification method (backend/PLAN.md's matching addendum) takes userID
+// explicitly, set by the caller (internal/handlers) from the verified
+// JWT — never a client-supplied value.
+type Client interface {
+	CompleteLinkedInOnboarding(ctx context.Context, authorizationCode, redirectURI string) (Session, error)
+	RefreshSession(ctx context.Context, refreshToken string) (Session, error)
+	// RevokeSession is idempotent — revoking an already-revoked or unknown
+	// token is not an error.
+	RevokeSession(ctx context.Context, refreshToken string) error
+
+	StartPhoneVerification(ctx context.Context, userID, phoneNumber string) (resendAfterSeconds int32, err error)
+	VerifyPhoneCode(ctx context.Context, userID, phoneNumber, code string) (Session, error)
+	StartPersonalEmailVerification(ctx context.Context, userID, email string) (resendAfterSeconds int32, err error)
+	VerifyPersonalEmailCode(ctx context.Context, userID, email, code string) (Session, error)
+	SubmitPersonalDetails(ctx context.Context, userID, legalName, address string) (Session, error)
+	StartCorporateEmailVerification(ctx context.Context, userID, email string) (resendAfterSeconds int32, err error)
+	VerifyCorporateEmailCode(ctx context.Context, userID, email, code string) (Session, error)
+	GetProfile(ctx context.Context, userID string) (Profile, error)
+
+	Close() error
+}
+
+type grpcClient struct {
+	conn   *grpc.ClientConn
+	client authv1.AuthServiceClient
+}
+
+// New connects to the auth service at addr (e.g. "auth:9090"), blocking
+// until the connection is ready or connectTimeout elapses.
+func New(addr string) (Client, error) {
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return nil, fmt.Errorf("authclient: create grpc client for %s: %w", addr, err)
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), connectTimeout)
+	defer cancel()
+
+	conn.Connect()
+	for {
+		state := conn.GetState()
+		if state == connectivity.Ready {
+			break
+		}
+		if !conn.WaitForStateChange(ctx, state) {
+			_ = conn.Close()
+			return nil, fmt.Errorf("authclient: connect to auth service at %s: %w", addr, ctx.Err())
+		}
+	}
+
+	return &grpcClient{conn: conn, client: authv1.NewAuthServiceClient(conn)}, nil
+}
+
+func (c *grpcClient) Close() error {
+	return c.conn.Close()
+}
+
+func (c *grpcClient) CompleteLinkedInOnboarding(
+	ctx context.Context, authorizationCode, redirectURI string,
+) (Session, error) {
+	resp, err := c.client.CompleteLinkedInOnboarding(ctx, &authv1.CompleteLinkedInOnboardingRequest{
+		AuthorizationCode: authorizationCode,
+		RedirectUri:       redirectURI,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) RefreshSession(ctx context.Context, refreshToken string) (Session, error) {
+	resp, err := c.client.RefreshSession(ctx, &authv1.RefreshSessionRequest{RefreshToken: refreshToken})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) RevokeSession(ctx context.Context, refreshToken string) error {
+	_, err := c.client.RevokeSession(ctx, &authv1.RevokeSessionRequest{RefreshToken: refreshToken})
+	return err
+}
+
+func (c *grpcClient) StartPhoneVerification(ctx context.Context, userID, phoneNumber string) (int32, error) {
+	resp, err := c.client.StartPhoneVerification(ctx, &authv1.StartVerificationRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_PHONE,
+		Target:  phoneNumber,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetResendAfterSeconds(), nil
+}
+
+func (c *grpcClient) VerifyPhoneCode(ctx context.Context, userID, phoneNumber, code string) (Session, error) {
+	resp, err := c.client.VerifyPhoneCode(ctx, &authv1.VerifyCodeRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_PHONE,
+		Target:  phoneNumber,
+		Code:    code,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) StartPersonalEmailVerification(ctx context.Context, userID, email string) (int32, error) {
+	resp, err := c.client.StartPersonalEmailVerification(ctx, &authv1.StartVerificationRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_PERSONAL_EMAIL,
+		Target:  email,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetResendAfterSeconds(), nil
+}
+
+func (c *grpcClient) VerifyPersonalEmailCode(ctx context.Context, userID, email, code string) (Session, error) {
+	resp, err := c.client.VerifyPersonalEmailCode(ctx, &authv1.VerifyCodeRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_PERSONAL_EMAIL,
+		Target:  email,
+		Code:    code,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) SubmitPersonalDetails(ctx context.Context, userID, legalName, address string) (Session, error) {
+	resp, err := c.client.SubmitPersonalDetails(ctx, &authv1.SubmitPersonalDetailsRequest{
+		UserId:    userID,
+		LegalName: legalName,
+		Address:   address,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) StartCorporateEmailVerification(ctx context.Context, userID, email string) (int32, error) {
+	resp, err := c.client.StartCorporateEmailVerification(ctx, &authv1.StartVerificationRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_CORPORATE_EMAIL,
+		Target:  email,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetResendAfterSeconds(), nil
+}
+
+func (c *grpcClient) VerifyCorporateEmailCode(ctx context.Context, userID, email, code string) (Session, error) {
+	resp, err := c.client.VerifyCorporateEmailCode(ctx, &authv1.VerifyCodeRequest{
+		UserId:  userID,
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_CORPORATE_EMAIL,
+		Target:  email,
+		Code:    code,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) GetProfile(ctx context.Context, userID string) (Profile, error) {
+	resp, err := c.client.GetProfile(ctx, &authv1.GetProfileRequest{UserId: userID})
+	if err != nil {
+		return Profile{}, err
+	}
+	return Profile{
+		UserID:                  resp.GetUserId(),
+		FullName:                resp.GetFullName(),
+		ProfilePhotoURL:         resp.GetProfilePhotoUrl(),
+		TrustLevel:              int(resp.GetTrustLevel()),
+		PhoneVerified:           resp.GetPhoneVerified(),
+		PersonalEmailVerified:   resp.GetPersonalEmailVerified(),
+		PersonalDetailsComplete: resp.GetPersonalDetailsComplete(),
+		CompanyDomain:           resp.GetCompanyDomain(),
+		WorkEmailVerified:       resp.GetWorkEmailVerified(),
+	}, nil
+}
+
+func sessionFromProto(resp *authv1.SessionResponse) Session {
+	return Session{
+		UserID:                      resp.GetUserId(),
+		AccessToken:                 resp.GetAccessToken(),
+		RefreshToken:                resp.GetRefreshToken(),
+		AccessTokenExpiresInSeconds: resp.GetAccessTokenExpiresInSeconds(),
+		IsNewUser:                   resp.GetIsNewUser(),
+		FullName:                    resp.GetFullName(),
+		ProfilePhotoURL:             resp.GetProfilePhotoUrl(),
+	}
+}

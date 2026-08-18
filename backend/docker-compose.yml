@@ -62,6 +62,32 @@ services:
       - "-database=postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-professional_connections}?sslmode=disable"
       - "up"
 
+  # One-shot: creates the Pub/Sub topics services/auth publishes to, then
+  # exits. Topics aren't auto-created on first publish (real GCP Pub/Sub
+  # isn't either), and the emulator's state is in-memory and wiped on every
+  # restart — without this, PublishUserOnboarded fails every new LinkedIn
+  # user's onboarding with "Topic not found" on a fresh `docker compose up`.
+  # Re-run any time with `docker compose run --rm pubsub-setup`. Tolerates
+  # 409 (topic already exists) so re-running against a still-live emulator
+  # is a no-op, not a failure.
+  pubsub-setup:
+    image: curlimages/curl:8.10.1
+    depends_on:
+      pubsub-emulator:
+        condition: service_started
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        i=0
+        while [ "$$i" -lt 30 ]; do
+          code=$$(curl -s -o /dev/null -w '%{http_code}' -X PUT "http://pubsub-emulator:8085/v1/projects/${GCP_PROJECT_ID:-local-dev}/topics/user-onboarded")
+          if [ "$$code" = "200" ] || [ "$$code" = "409" ]; then exit 0; fi
+          i=$$((i + 1))
+          sleep 1
+        done
+        echo "pubsub-setup: emulator did not become ready in time" >&2
+        exit 1
+
   gateway:
     build:
       context: .
@@ -88,8 +114,8 @@ services:
     depends_on:
       postgres:
         condition: service_healthy
-      pubsub-emulator:
-        condition: service_started
+      pubsub-setup:
+        condition: service_completed_successfully
     ports:
       - "9090:9090" # gRPC — not exposed to the public gateway network in production, only opened here for local debugging
     environment:
@@ -101,6 +127,14 @@ services:
       LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID}
       LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET}
       LINKEDIN_REDIRECT_URI: ${LINKEDIN_REDIRECT_URI}
+      # Level 2/3 verification slice (ADR-012 + correction) — empty in
+      # .env falls back to LoggingSmsSender/LoggingEmailSender, doesn't
+      # break local dev.
+      TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
+      TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
+      TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+      RESEND_API_KEY: ${RESEND_API_KEY}
+      RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
     volumes:
       - ./secrets:/secrets:ro
 

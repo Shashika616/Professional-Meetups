@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<meta name="robots" content="noindex, nofollow" />
+<title>Professional Connections</title>
+<style>
+  :root {
+    --onyx: #020202;
+    --surface: #0c0f12;
+    --card: #14181c;
+    --candy-blue: #b2d5e5;
+    --steel-blue: #6e93ac;
+    --deep-blue: #274050;
+    --text-primary: #edf2f6;
+    --text-secondary: #93a1ac;
+    --danger: #e5484d;
+    --glass-border: rgba(255, 255, 255, 0.15);
+  }
+
+  * { box-sizing: border-box; }
+
+  body {
+    margin: 0;
+    min-height: 100vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: linear-gradient(to bottom, var(--onyx) 0%, var(--surface) 55%, var(--deep-blue) 100%);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    color: var(--text-primary);
+    padding: 24px;
+    text-align: center;
+  }
+
+  .card {
+    max-width: 360px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+
+  .icon-ring {
+    width: 96px;
+    height: 96px;
+    border-radius: 50%;
+    border: 2px solid rgba(178, 213, 229, 0.3);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 28px;
+  }
+
+  .spinner {
+    width: 22px;
+    height: 22px;
+    border-radius: 50%;
+    border: 2px solid rgba(178, 213, 229, 0.25);
+    border-top-color: var(--candy-blue);
+    animation: spin 0.9s linear infinite;
+  }
+
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+
+  h1 {
+    font-size: 20px;
+    font-weight: 800;
+    letter-spacing: -0.3px;
+    margin: 0 0 8px;
+  }
+
+  p {
+    font-size: 13px;
+    color: var(--text-secondary);
+    line-height: 1.5;
+    margin: 0;
+  }
+
+  .fallback {
+    display: none;
+    margin-top: 28px;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+  }
+
+  .fallback.visible {
+    display: flex;
+  }
+
+  a.continue-btn {
+    display: inline-block;
+    padding: 14px 28px;
+    border-radius: 14px;
+    background: linear-gradient(135deg, var(--candy-blue), var(--steel-blue));
+    color: var(--onyx);
+    font-weight: 800;
+    font-size: 12px;
+    letter-spacing: 1.4px;
+    text-transform: uppercase;
+    text-decoration: none;
+  }
+
+  .error-icon {
+    color: var(--danger);
+    font-size: 28px;
+  }
+</style>
+</head>
+<body>
+  <div class="card">
+    <div id="statusIcon" class="icon-ring"><div class="spinner"></div></div>
+    <h1 id="title">Finishing sign-in…</h1>
+    <p id="message">Taking you back to Professional Connections. This only takes a second.</p>
+
+    <div id="fallback" class="fallback">
+      <a id="continueLink" class="continue-btn" href="#">Open the app</a>
+      <p id="fallbackHint"></p>
+    </div>
+  </div>
+
+  <script>
+    // This page's only job: forward whatever LinkedIn sent back (code/state,
+    // or an error) to the app via its custom URL scheme. LinkedIn requires
+    // an https:// redirect URL and won't accept the scheme directly — this
+    // bridge is the standard fix (see frontend/PLAN.md Step 0.2). It never
+    // talks to the backend; it only ever reads the query string it was
+    // loaded with and re-emits it on a different scheme.
+    (function () {
+      var APP_SCHEME = 'professionalconnections://auth/linkedin/callback';
+      var params = window.location.search; // includes leading "?", or ""
+      var target = APP_SCHEME + params;
+
+      var hasError = /[?&]error=/.test(params);
+      if (hasError) {
+        document.getElementById('statusIcon').innerHTML = '<span class="error-icon">!</span>';
+        document.getElementById('title').textContent = 'Sign-in didn\'t complete';
+        document.getElementById('message').textContent =
+          'LinkedIn didn\'t finish the sign-in. You can close this and try again from the app.';
+      }
+
+      var continueLink = document.getElementById('continueLink');
+      continueLink.href = target;
+
+      // Automatic redirect first — works in most in-app/system browsers.
+      window.location.replace(target);
+
+      // Fallback: some mobile browsers block a script-triggered redirect to
+      // a non-http(s) scheme and require an actual tap. Reveal a real link
+      // (a genuine user gesture, more reliably allowed) if we're still here
+      // after a beat.
+      window.setTimeout(function () {
+        document.getElementById('fallback').classList.add('visible');
+        document.getElementById('fallbackHint').textContent = hasError
+          ? ''
+          : 'Didn\'t open automatically? Tap above.';
+      }, 1200);
+    })();
+  </script>
+</body>
+</html>

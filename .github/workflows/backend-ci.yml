@@ -1,0 +1,108 @@
+name: Backend CI
+
+# Separate from flutter-ci.yml on purpose (backend/PLAN.md Step 6) — Go and
+# Dart/Flutter are unrelated toolchains, no reason to couple their pipelines.
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+jobs:
+  build-lint-test:
+    runs-on: ubuntu-latest
+
+    # postgres backs services/auth's integration test (PLAN.md Step 4);
+    # redis backs services/gateway's rate-limiter test (Step 5). Both mirror
+    # the images docker-compose.yml uses locally. Exposed on localhost since
+    # this job runs directly on the runner, not inside a container.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: app
+          POSTGRES_PASSWORD: app
+          POSTGRES_DB: professional_connections
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U app -d professional_connections"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    env:
+      # Picked up by the integration test's requirePostgres/requireRedis
+      # skip-if-unreachable helpers — with these containers healthy, the
+      # tests run for real instead of skipping.
+      DATABASE_URL: postgres://app:app@localhost:5432/professional_connections?sslmode=disable
+      REDIS_ADDR: localhost:6379
+
+    steps:
+      - uses: actions/checkout@v4
+
+      # Pinned, not a floating channel — mirrors the exact lesson learned
+      # (and now documented) in flutter-ci.yml: an unpinned toolchain
+      # silently drifts to whatever's current on the day CI runs, which
+      # already broke the Flutter formatter check once in this repo. Keep
+      # this in step with Step 1's go.work / go.mod directive.
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.26.6"
+
+      - name: Install golangci-lint
+        run: go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@v2.12.2
+
+      # go.work ties shared + both services together for local dev, but
+      # `go build/vet/golangci-lint ./...` from the workspace root doesn't
+      # resolve cleanly against it — same thing PLAN.md Step 1 verification
+      # ran into. Run each module directory explicitly instead.
+      - name: Build (shared)
+        working-directory: backend/shared
+        run: go build ./...
+      - name: Build (services/auth)
+        working-directory: backend/services/auth
+        run: go build ./...
+      - name: Build (services/gateway)
+        working-directory: backend/services/gateway
+        run: go build ./...
+
+      - name: Vet (shared)
+        working-directory: backend/shared
+        run: go vet ./...
+      - name: Vet (services/auth)
+        working-directory: backend/services/auth
+        run: go vet ./...
+      - name: Vet (services/gateway)
+        working-directory: backend/services/gateway
+        run: go vet ./...
+
+      - name: Lint (shared)
+        working-directory: backend/shared
+        run: golangci-lint run ./...
+      - name: Lint (services/auth)
+        working-directory: backend/services/auth
+        run: golangci-lint run ./...
+      - name: Lint (services/gateway)
+        working-directory: backend/services/gateway
+        run: golangci-lint run ./...
+
+      - name: Test (shared)
+        working-directory: backend/shared
+        run: go test ./...
+      - name: Test (services/auth)
+        working-directory: backend/services/auth
+        run: go test ./...
+      - name: Test (services/gateway)
+        working-directory: backend/services/gateway
+        run: go test ./...

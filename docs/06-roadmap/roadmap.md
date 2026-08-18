@@ -1,6 +1,6 @@
 # Roadmap
 
-Phased to reduce risk, not just to sequence features — see [ADR-004](../04-decisions/adr-004-defer-dating-and-open-ride-sharing.md) and [ADR-005](../04-decisions/adr-005-invite-only-company-based-closed-launch.md) for why dating/ride-sharing and open registration are deliberately late. Live status tracking lives in [Project State](../00-project/project-state.md); this note is the target sequence.
+Phased to reduce risk, not just to sequence features — see [ADR-004](../04-decisions/adr-004-defer-dating-and-open-ride-sharing.md) and [ADR-005](../04-decisions/adr-005-invite-only-company-based-closed-launch.md) for why dating/ride-sharing and open registration are deliberately late. Live status tracking lives in [Project State](../00-project/project-state.md); this note is the target sequence. Every backend item below should be built using [Feature Build Plan Template](feature-build-plan-template.md) (extracted from [ADR-011](../04-decisions/adr-011-linkedin-onboarding-slice-design.md)/`backend/PLAN.md`, the first slice) — scope boundary, test pyramid, and self-review checklist, not ad hoc.
 
 ## Phase 1 — Foundation & Safer MVP
 
@@ -33,4 +33,4 @@ Phased to reduce risk, not just to sequence features — see [ADR-004](../04-dec
 
 ## Related
 
-[Requirements](../01-product/requirements.md) · [Vision](../00-project/vision.md) · [Project State](../00-project/project-state.md) · [ADR-004](../04-decisions/adr-004-defer-dating-and-open-ride-sharing.md) · [ADR-005](../04-decisions/adr-005-invite-only-company-based-closed-launch.md)
+[Requirements](../01-product/requirements.md) · [Vision](../00-project/vision.md) · [Project State](../00-project/project-state.md) · [Action Tracker](../00-project/action-tracker.md) · [Feature Build Plan Template](feature-build-plan-template.md) · [ADR-004](../04-decisions/adr-004-defer-dating-and-open-ride-sharing.md) · [ADR-005](../04-decisions/adr-005-invite-only-company-based-closed-launch.md)

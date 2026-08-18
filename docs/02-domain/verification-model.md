@@ -16,6 +16,8 @@
 
 OTP with rate limiting; block high-risk VoIP numbers; detect disposable-number providers; limit accounts per phone number; detect recent SIM changes where possible; prefer device-bound verification; app attestation against bulk OTP bots; no unlimited OTP resends. Where available, prefer carrier-based/silent network verification over SMS OTP alone. Never reveal a user's full phone number to other users.
 
+**Implementation ([ADR-012](../04-decisions/adr-012-level-2-3-verification-delivery-and-identity-anchors.md), 2026-08-17)**: delivery is via Firebase Authentication Phone Auth, not a custom SMS integration — the app talks to Firebase directly, the backend verifies the resulting Firebase ID token server-side and stores only the verified phone number. `phone_number` carries its own `UNIQUE` constraint, making it a real account-identity anchor independent of LinkedIn.
+
 ## 2. LinkedIn verification — the entry point (Level 1)
 
 Two paths, per [ADR-006](../04-decisions/adr-006-progressive-linkedin-first-trust-onboarding.md), not treated as equally trustworthy:
@@ -29,6 +31,8 @@ For federated accounts, cross-check consistency across LinkedIn name, app name, 
 
 A standard OTP/magic-link verification against the user's personal email address (this is separate from, and in addition to, professional/work email — see § 5). Confirms the user controls a real, persistent email address and provides an account-recovery channel independent of LinkedIn or phone.
 
+**Implementation ([ADR-012](../04-decisions/adr-012-level-2-3-verification-delivery-and-identity-anchors.md), 2026-08-17)**: backend-generated code (not Firebase — Firebase's email flows are tied to Firebase Auth user objects, which this app doesn't use), hash-and-expiry stored server-side, delivered via a transactional email API (exact provider not yet chosen, a same-day integration whenever needed). `personal_email` also carries its own `UNIQUE` constraint, same identity-anchor reasoning as phone above.
+
 ## 4. Personal details (Level 2)
 
 Legal name and address, captured during the Level 2 upgrade flow. Used for: matching the name against LinkedIn/phone-owner name for consistency checks (§ 2), enabling KYC document matching later if the user reaches Level 4, and — where legally required — identity records for incident response ([Operations & Incident Response](../03-architecture/operations-and-incident-response.md)). Treat address as sensitive: never shown to other users, fuzzed the same way location is (see [Privacy & Anti-Abuse Controls](../03-architecture/privacy-and-anti-abuse-controls.md) § Location privacy).
@@ -36,6 +40,10 @@ Legal name and address, captured during the Level 2 upgrade flow. Used for: matc
 ## 5. Professional (work) email verification — optional trust booster (Level 3)
 
 Not required to use the app (per [ADR-006](../04-decisions/adr-006-progressive-linkedin-first-trust-onboarding.md), this is no longer a mandatory onboarding pillar) — but the strongest available signal short of KYC, and the one with the most legal nuance. See [Sri Lanka PDPA - Work Email Verification](../07-research/sri-lanka-pdpa-work-email-verification.md) and [ADR-003](../04-decisions/adr-003-ephemeral-work-email-verification.md).
+
+**Implementation status ([ADR-012](../04-decisions/adr-012-level-2-3-verification-delivery-and-identity-anchors.md), 2026-08-17): MVP-scoped, not the full flow below.** First build covers OTP/link verification + free/role-based domain rejection + `company_domain`/`work_email_verified`/`verified_at` storage only. Domain-age/SPF/DKIM/DMARC checks, the company verification database, and manual review for unknown domains are **deferred**, same "conscious, documented narrowing" treatment [ADR-004](../04-decisions/adr-004-defer-dating-and-open-ride-sharing.md) used for dating/ride-sharing — the rest of this section describes the target design to build toward, not what exists yet. Don't treat Level 3 as load-bearing for anything Enterprise-tier until the deferred pieces land.
+
+**Residual attack this MVP does not close (flagged explicitly, 2026-08-17):** anyone can register a fresh, unrelated domain designed to *look* corporate — e.g. `acme-hr.com` or `acmecorp-careers.net` when the real company is `acme.com` — set up any mailbox on it (`hr@`, `person@`, whatever isn't on the role-based reject list), and pass this MVP's check cleanly: the OTP only proves the person controls that mailbox, not that the domain belongs to a real employer, and nothing here checks domain age, registration recency, or similarity to a known brand. This is exactly the "lookalike pattern" scenario the deferred **Domain verification**/**Company verification database** bullets below exist to catch — it is a known, accepted gap for this MVP, not an oversight, but it means a **Work Email Verified** badge in this build should be read as "this person controls an inbox on this domain," not "this domain is a legitimate employer." UI/microcopy for this badge must not overclaim — see `frontend/PLAN.md`'s Level 2/3 addendum for the specific copy guidance this requirement drives.
 
 - **Reject free email domains** (gmail.com, yahoo.com, hotmail.com, outlook.com, protonmail.com, zoho.com, icloud.com) as professional proof — usable for recovery/communication only.
 - **Reject role-based addresses** (info@, admin@, hr@, contact@, support@, careers@, jobs@, office@) — too easy to abuse. Require personal work addresses (firstname.lastname@company.com).

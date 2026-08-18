@@ -1,26 +1,43 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 
+import 'package:professional_connections_platform/app_shell.dart';
+import 'package:professional_connections_platform/core/providers/app_providers.dart';
 import 'package:professional_connections_platform/core/theme/app_palette.dart';
 import 'package:professional_connections_platform/core/widgets/app_icon.dart';
 import 'package:professional_connections_platform/features/landing/landing_page.dart';
 
-class SplashScreen extends StatefulWidget {
+class SplashScreen extends ConsumerStatefulWidget {
   const SplashScreen({super.key});
 
   @override
-  State<SplashScreen> createState() => _SplashScreenState();
+  ConsumerState<SplashScreen> createState() => _SplashScreenState();
 }
 
-class _SplashScreenState extends State<SplashScreen> {
+class _SplashScreenState extends ConsumerState<SplashScreen> {
   @override
   void initState() {
     super.initState();
-    Future.delayed(const Duration(seconds: 2), () {
-      if (!mounted) return;
-      Navigator.of(context).pushReplacement(
-        MaterialPageRoute(builder: (context) => const LandingPage()),
-      );
-    });
+    _decideNextScreen();
+  }
+
+  Future<void> _decideNextScreen() async {
+    final minimumDisplay = Future<void>.delayed(const Duration(seconds: 2));
+
+    // A stored session (i.e. a refresh token) means "logged in" — the short
+    // access token being expired doesn't matter here, it refreshes on
+    // demand against whatever authenticated call needs it next.
+    final sessionState = await ref.read(authSessionProvider.future);
+
+    await minimumDisplay;
+    if (!mounted) return;
+
+    Navigator.of(context).pushReplacement(
+      MaterialPageRoute(
+        builder: (context) =>
+            sessionState.isLoggedIn ? const AppShell() : const LandingPage(),
+      ),
+    );
   }
 
   @override

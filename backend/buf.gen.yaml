@@ -1,0 +1,11 @@
+# Generates into shared/proto/... to match the go_package option already
+# declared in each .proto file — see backend/PLAN.md Step 2. Generated code
+# is committed (not gitignored) so a fresh clone builds without buf.
+version: v2
+plugins:
+  - local: protoc-gen-go
+    out: shared/proto
+    opt: paths=source_relative
+  - local: protoc-gen-go-grpc
+    out: shared/proto
+    opt: paths=source_relative
