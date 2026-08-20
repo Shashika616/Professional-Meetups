@@ -420,3 +420,123 @@ LinkedIn/Phone rows' pattern without thinking about it — don't.
 KYC (Level 4) UI, profile editing for already-verified fields, phone/email
 as an alternate login method, a company-name field, and the meetup feature
 — scoped as its own separate plan once this lands, not bundled in here.
+
+## Addendum (2026-08-17): Session refresh wiring fix
+
+**Sequencing: do not start this until the Level 2/3 verification addendum above (Steps 1-6) is merged.** Both touch `http_auth_service.dart` and `app_providers.dart`; stacking a second in-flight diff on the same files invites a messy rebase. This section is written now so it's ready the moment that diff lands — confirm it's merged before starting.
+
+**Bug being fixed, confirmed by reading the actual code (not assumed):** `HttpAuthService.refreshSession()` (`POST /v1/auth/refresh`) is fully implemented and correct, and `AuthSession.accessTokenExpiresAt`/`SecureSessionStorage` already persist everything needed to know when a token is stale. But nothing calls `refreshSession()` — `AuthSessionNotifier.build()` loads the stored session and uses it as-is with no expiry check, and the `getAccessToken` callback wired into `HttpAuthService` (`app_providers.dart`) reads the stored access token directly, also with no expiry check. `SessionExpiredException` is thrown on a 401 in two places (`_parseSessionResponse`, `_mapVerificationError`) but caught nowhere. Net effect: the access token silently goes stale after 15 minutes and every authenticated call from that point starts failing, even though the refresh token is still good for 30 days — exactly the "have to log in again constantly" bug Shashika flagged.
+
+**Design principle carried over from the existing code's own doc comments**: `HttpAuthService` holds no session state of its own — it only reads it via the `getAccessToken` callback. This fix keeps that principle; it doesn't turn `HttpAuthService` into a second place that owns session state.
+
+**The `AuthSessionNotifier.build()`-cannot-self-reference constraint** (see the existing comment above `authServiceProvider` in `app_providers.dart`) still applies: nothing this addendum adds may call `ref.read(authSessionProvider)` or `ref.read(authSessionProvider.notifier)` from inside `AuthSessionNotifier.build()`. The design below only ever touches `sessionStorageProvider` and `authServiceProvider` from that context, same as today.
+
+### Step 1 — `TokenRefresher`
+
+New file `frontend/lib/core/services/token_refresher.dart`. A small, storage-backed helper — not a Riverpod notifier, not session state, just proactive-refresh-with-persistence:
+
+```dart
+class TokenRefresher {
+  TokenRefresher({
+    required SecureSessionStorage storage,
+    required Future<AuthSession> Function(String refreshToken) refreshSession,
+    Duration expiryBuffer = const Duration(seconds: 30),
+  });
+
+  /// Full session, refreshed and persisted first if the stored access
+  /// token is expired or within [expiryBuffer] of expiring. Null if no
+  /// session is stored at all. Rethrows whatever refreshSession() throws
+  /// (SessionExpiredException on a rejected/rotated-away refresh token,
+  /// AuthNetworkException on a transient failure) after clearing the
+  /// stored session — a rejected refresh token really does mean the
+  /// session is gone; a network blip clearing storage is an acceptable
+  /// simplification here since the caller has no good way to distinguish
+  /// the two from a single failed HTTP call, and re-login is always a
+  /// safe fallback even for the network-blip case.
+  Future<AuthSession?> getValidSession();
+
+  /// Convenience wrapper for the getAccessToken callback shape
+  /// HttpAuthService already expects.
+  Future<String?> getValidAccessToken() async =>
+      (await getValidSession())?.accessToken;
+}
+```
+
+Internals:
+- `getValidSession()`: `storage.loadSession()`; if null return null; if `accessTokenExpiresAt` is after `now + expiryBuffer`, return it as-is (no network call — this is the common case, keep it cheap); otherwise call the private refresh path below and return its result.
+- Refresh path: **single-flight** — cache the in-flight `Future<AuthSession>` and hand the same one to every concurrent caller rather than firing a second `refreshSession()` call. This isn't a nice-to-have: the backend rotates refresh tokens on every use with reuse/replay detection (`refresh_tokens.replaced_by`, per the theft-detection design discussed earlier this project) — two concurrent calls both reading the same now-stale refresh token and both POSTing it to `/v1/auth/refresh` would have the second one rejected as a replay, which would incorrectly kill a perfectly good session. A `Future<AuthSession>?` field holding the in-flight attempt, cleared in a `whenComplete`, is enough.
+- On success: `storage.saveSession(refreshed)`, return it.
+- On failure: `storage.clearSession()`, rethrow the original error.
+
+### Step 2 — Wire it into `authServiceProvider`
+
+In `app_providers.dart`, replace the current direct-storage-read `getAccessToken` with `TokenRefresher.getValidAccessToken`. `TokenRefresher` needs `authServiceProvider`'s own `refreshSession()` method, which creates a naive circular dependency if built as two separate providers (`tokenRefresherProvider` needing `authServiceProvider`, `authServiceProvider` needing `tokenRefresherProvider`) — avoid that by constructing both inside one provider body, same pattern already used for other tightly-coupled construction in this file:
+
+```dart
+final authServiceProvider = Provider<AuthService>((ref) {
+  final storage = ref.read(sessionStorageProvider);
+  late final HttpAuthService service;
+  final refresher = TokenRefresher(
+    storage: storage,
+    refreshSession: (token) => service.refreshSession(token),
+  );
+  service = HttpAuthService(getAccessToken: refresher.getValidAccessToken);
+  return service;
+});
+```
+
+Also expose `tokenRefresherProvider` (built the same way, or split out) so `AuthSessionNotifier.build()` can reach it in Step 3 without duplicating the construction — simplest is to keep one private `_TokenRefresherBundle`-style provider both `authServiceProvider` and the new provider read, or just expose the `refresher` instance via its own `Provider<TokenRefresher>` and have `authServiceProvider` depend on *that* (one-directional: `authServiceProvider` → `tokenRefresherProvider` → `authServiceProvider`'s `refreshSession` via the same `late final` trick isn't needed if `TokenRefresher` is built first with a placeholder and `HttpAuthService` built second reading it — pick whichever ordering avoids the cycle; the `late final service` pattern above is the simplest one that works in a single provider body). Use judgment on the exact split, but the two hard constraints are: (1) no provider-level circular dependency, (2) exactly one `HttpAuthService` and one `TokenRefresher` instance for the app's lifetime (a `Provider`, not `.autoDispose`, same as today).
+
+### Step 3 — Wire it into `AuthSessionNotifier.build()`
+
+Replace `ref.watch(sessionStorageProvider).loadSession()` with `ref.read(tokenRefresherProvider).getValidSession()` (or however Step 2 exposed it). Everything downstream (`_fetchProfileOrFallback`, the existing `catch (_) { return const AuthSessionState(); }`) needs no change — a refresh failure during launch already correctly resolves to a logged-out `AuthSessionState` through the existing catch block.
+
+### Step 4 — `forceSignOut()` for a mid-session refresh failure
+
+The gap Step 3 doesn't cover: a refresh failure happening *after* launch, triggered by some other authenticated call (a verification screen, a profile refetch) going through the `getAccessToken` callback rather than through `build()`. `TokenRefresher` clears storage in that case, but `authSessionProvider`'s in-memory `state.session` doesn't know that on its own — Riverpod won't notice a storage write it wasn't watching for.
+
+Add to `AuthSessionNotifier`:
+
+```dart
+/// Called when a caller catches SessionExpiredException from an
+/// authenticated call made mid-session (not during build()/launch,
+/// which already handles this itself) — TokenRefresher has already
+/// cleared storage by the time this runs, so this only needs to bring
+/// in-memory state into agreement with it. Unlike signOut(), this must
+/// NOT call authService.logout() — the refresh token that call would
+/// send is already dead server-side (that's why we're here), and
+/// storage no longer has it to send anyway.
+void forceSignOut() {
+  state = const AsyncData(AuthSessionState());
+}
+```
+
+### Step 5 — Catch `SessionExpiredException` where it surfaces, and auto-navigate as a safety net
+
+Two layers, both needed:
+
+1. Wherever a screen already catches `AuthException` from an `AuthService`/`authSessionProvider` call to show an error (verification screens, `ProfilePage`'s verification-status refetch), add a `SessionExpiredException` case that calls `ref.read(authSessionProvider.notifier).forceSignOut()` before showing/dismissing, rather than showing it as a generic "something went wrong" — the user needs to know sign-in is required again, not that a request failed.
+2. In `AppShell`, add a `ref.listen(authSessionProvider, ...)` that navigates to `LandingPage` (clearing the nav stack, same as `ProfilePage`'s existing sign-out navigation) whenever `isLoggedIn` transitions from `true` to `false` while `AppShell` is mounted. This is the safety net for any authenticated call site that doesn't have its own explicit catch — without it, a forgotten catch block would leave the user stranded on a dead session with every action silently failing.
+
+**UX distinction to get right**: this is an *involuntary* sign-out (session actually expired/was revoked), not the user tapping "Sign Out." Do not show the existing sign-out confirmation dialog (Step 12 above) on this path — that dialog is for confirming intent before a voluntary action, not for something that already happened. Show a brief, low-friction explanation instead (a `SnackBar` on `LandingPage` after the navigation, e.g. "Your session expired — please sign in again," is enough) so it doesn't read as an unexplained kick-out.
+
+### Tests
+
+- `TokenRefresher` unit tests (fake `SecureSessionStorage`/fake `refreshSession`): returns the cached session unchanged when not expiring soon (asserts `refreshSession` was never called); refreshes and persists when expired; two concurrent `getValidSession()` calls against an expired session result in exactly one `refreshSession()` call (the single-flight case — this is the one worth actually testing, not just reasoning about); clears storage and rethrows when `refreshSession()` throws; returns null when no session is stored.
+- `AuthSessionNotifier.build()` test: stored session with an already-past `accessTokenExpiresAt` + a fake `refreshSession` that succeeds → resolves to a logged-in state carrying the *refreshed* session, not the stale one.
+- `AuthSessionNotifier.forceSignOut()` test: state goes from logged-in to `const AuthSessionState()`.
+- Widget test on `AppShell`: forcing `authSessionProvider` to emit a logged-out state while `AppShell` is showing results in navigation to `LandingPage`.
+
+### Self-review checklist
+
+- [ ] No code path calls `ref.read`/`ref.watch` on `authSessionProvider` or its notifier from inside `AuthSessionNotifier.build()` — only `sessionStorageProvider`/`authServiceProvider`/`tokenRefresherProvider`, matching the existing constraint comment in `app_providers.dart`.
+- [ ] Exactly one `refreshSession()` HTTP call happens when two authenticated requests race against the same expired token (test this, don't just eyeball it) — this is the concrete failure mode of skipping single-flighting, and it would look like an intermittent, hard-to-reproduce forced logout in practice.
+- [ ] `forceSignOut()` does not call `authService.logout()`.
+- [ ] The involuntary-session-expiry path does not show the voluntary sign-out confirmation dialog.
+- [ ] A session that's been idle (app backgrounded, not force-quit) for longer than 15 minutes but less than 30 days comes back to a logged-in state on next foreground/relaunch, not a forced re-login — this is the actual bug being fixed; confirm it by hand against the local backend with a shortened access-token TTL if that's faster than waiting 15 real minutes.
+- [ ] `flutter analyze`/`dart format --set-exit-if-changed .`/`flutter test` all clean.
+- [ ] Bring the diff back to Cowork for review before merging.
+
+### Explicitly not in this addendum
+
+Biometric/PIN re-auth, a "remember me" opt-out, silently retrying a request that got a 401 for a reason *other* than expiry (e.g. a genuinely revoked account) — those cases should still surface as a real session-expired state, not an infinite retry loop.

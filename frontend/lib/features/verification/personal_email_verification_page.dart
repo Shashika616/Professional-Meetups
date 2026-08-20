@@ -56,6 +56,10 @@ class _PersonalEmailVerificationPageState
       if (!mounted) return;
       setState(() => _resendAfterSeconds = resendAfterSeconds);
       showSnack(context, 'We sent a code to $_email', type: ToastType.success);
+    } on SessionExpiredException {
+      // No local error shown — AppShell's listener navigates to LandingPage
+      // and shows the "session expired" message itself.
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
     } catch (error) {
       if (mounted) {
         showSnack(
@@ -72,16 +76,33 @@ class _PersonalEmailVerificationPageState
   }
 
   Future<void> _verify(String code) async {
-    final session = await ref
-        .read(authServiceProvider)
-        .verifyPersonalEmailCode(_email, code);
-    await ref.read(authSessionProvider.notifier).completeVerification(session);
-    if (!mounted) return;
-    Navigator.pop(context);
+    try {
+      final session = await ref
+          .read(authServiceProvider)
+          .verifyPersonalEmailCode(_email, code);
+      await ref
+          .read(authSessionProvider.notifier)
+          .completeVerification(session);
+      if (!mounted) return;
+      Navigator.pop(context);
+    } on SessionExpiredException {
+      // Rethrown so OtpEntry's own catch still surfaces the (specific,
+      // non-generic) message while AppShell's listener navigates away.
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
+      rethrow;
+    }
   }
 
-  Future<int> _resend() =>
-      ref.read(authServiceProvider).startPersonalEmailVerification(_email);
+  Future<int> _resend() async {
+    try {
+      return await ref
+          .read(authServiceProvider)
+          .startPersonalEmailVerification(_email);
+    } on SessionExpiredException {
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
+      rethrow;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

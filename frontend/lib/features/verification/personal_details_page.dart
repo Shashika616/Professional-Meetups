@@ -72,6 +72,10 @@ class _PersonalDetailsPageState extends ConsumerState<PersonalDetailsPage> {
       if (!mounted) return;
       showSnack(context, 'Personal details saved.', type: ToastType.success);
       Navigator.pop(context);
+    } on SessionExpiredException {
+      // No local error shown — AppShell's listener navigates to LandingPage
+      // and shows the "session expired" message itself.
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
     } catch (error) {
       if (!mounted) return;
       setState(() {

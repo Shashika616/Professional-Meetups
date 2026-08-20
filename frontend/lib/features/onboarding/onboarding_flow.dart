@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:professional_connections_platform/app_shell.dart';
+import 'package:professional_connections_platform/core/models/user_profile.dart';
 import 'package:professional_connections_platform/core/providers/app_providers.dart';
 import 'package:professional_connections_platform/core/services/auth_service.dart';
 import 'package:professional_connections_platform/core/theme/app_palette.dart';
@@ -14,21 +15,6 @@ import 'package:professional_connections_platform/features/verification/personal
 import 'package:professional_connections_platform/features/verification/personal_email_verification_page.dart';
 import 'package:professional_connections_platform/features/verification/phone_verification_page.dart';
 
-/// After a successful LinkedIn sign-in, the sequence phone → personal
-/// email → personal details → corporate email runs before landing in
-/// [AppShell] — each step individually skippable (`frontend/PLAN.md`'s
-/// Level 2/3 addendum, Step 5). Deliberately simple: a plain step-index
-/// push chain, not a `PageView` or a wizard with back-navigation/progress-
-/// saving — if the app is killed mid-sequence, the user lands back in
-/// [AppShell] next launch (the LinkedIn session already exists) and
-/// finishes any skipped steps from `ProfilePage` instead.
-const List<WidgetBuilder> _verificationSequence = [
-  _buildPhoneVerificationPage,
-  _buildPersonalEmailVerificationPage,
-  _buildPersonalDetailsPage,
-  _buildCorporateEmailVerificationPage,
-];
-
 Widget _buildPhoneVerificationPage(BuildContext context) =>
     const PhoneVerificationPage();
 Widget _buildPersonalEmailVerificationPage(BuildContext context) =>
@@ -37,6 +23,33 @@ Widget _buildPersonalDetailsPage(BuildContext context) =>
     const PersonalDetailsPage();
 Widget _buildCorporateEmailVerificationPage(BuildContext context) =>
     const CorporateEmailVerificationPage();
+
+/// After a successful LinkedIn sign-in, the sequence phone → personal
+/// email → personal details → corporate email runs before landing in
+/// [AppShell] — each step individually skippable (`frontend/PLAN.md`'s
+/// Level 2/3 addendum, Step 5). Deliberately simple: a plain step-index
+/// push chain, not a `PageView` or a wizard with back-navigation/progress-
+/// saving — if the app is killed mid-sequence, the user lands back in
+/// [AppShell] next launch (the LinkedIn session already exists) and
+/// finishes any skipped steps from `ProfilePage` instead.
+///
+/// Filtered against [profile]'s already-verified flags — a returning user
+/// (signing back in after a voluntary sign-out, or after the session-
+/// refresh addendum's involuntary forceSignOut() path) must not be walked
+/// back through steps the backend already has recorded as done. `profile`
+/// is null only if the fetch right after sign-in itself failed, in which
+/// case the safe fallback is the full sequence, same as a brand-new user —
+/// not silently skipping steps we have no actual confirmation are done.
+List<WidgetBuilder> _pendingVerificationSteps(UserProfile? profile) {
+  return [
+    if (profile?.phoneVerified != true) _buildPhoneVerificationPage,
+    if (profile?.personalEmailVerified != true)
+      _buildPersonalEmailVerificationPage,
+    if (profile?.personalDetailsComplete != true) _buildPersonalDetailsPage,
+    if (profile?.workEmailVerified != true)
+      _buildCorporateEmailVerificationPage,
+  ];
+}
 
 class OnboardingFlow extends ConsumerStatefulWidget {
   const OnboardingFlow({super.key});
@@ -55,7 +68,8 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     try {
       await ref.read(authSessionProvider.notifier).signInWithLinkedIn();
       if (!mounted) return;
-      await _runVerificationSequence();
+      final profile = ref.read(authSessionProvider).value?.profile;
+      await _runVerificationSequence(_pendingVerificationSteps(profile));
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
@@ -80,13 +94,16 @@ class _OnboardingFlowState extends ConsumerState<OnboardingFlow> {
     }
   }
 
-  /// Pushes each verification screen in turn, awaiting the pop before
-  /// pushing the next one — every screen pops itself (Skip or a
+  /// Pushes each still-pending verification screen in turn, awaiting the
+  /// pop before pushing the next one — every screen pops itself (Skip or a
   /// successful verify), so by the time this returns we're back on
   /// [OnboardingFlow] with the whole sequence behind us, ready for the
-  /// final `pushReplacement` to [AppShell].
-  Future<void> _runVerificationSequence() async {
-    for (final buildScreen in _verificationSequence) {
+  /// final `pushReplacement` to [AppShell]. Already-verified steps aren't
+  /// in [steps] at all (see [_pendingVerificationSteps]), so a returning
+  /// user with some or all of Level 2/3 already done sees only what's
+  /// actually left, or nothing.
+  Future<void> _runVerificationSequence(List<WidgetBuilder> steps) async {
+    for (final buildScreen in steps) {
       if (!mounted) return;
       await Navigator.push(context, MaterialPageRoute(builder: buildScreen));
     }

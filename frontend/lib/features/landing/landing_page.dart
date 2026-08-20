@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 
 import 'package:professional_connections_platform/core/theme/app_palette.dart';
 import 'package:professional_connections_platform/core/utils/snacks.dart';
+import 'package:professional_connections_platform/core/utils/toast.dart';
 import 'package:professional_connections_platform/core/widgets/app_background.dart';
 import 'package:professional_connections_platform/core/widgets/app_icon.dart';
 import 'package:professional_connections_platform/core/widgets/glass.dart';
@@ -9,8 +10,36 @@ import 'package:professional_connections_platform/core/widgets/gradient_button.d
 import 'package:professional_connections_platform/features/landing/widgets/orbiting_intents.dart';
 import 'package:professional_connections_platform/features/onboarding/onboarding_flow.dart';
 
-class LandingPage extends StatelessWidget {
-  const LandingPage({super.key});
+class LandingPage extends StatefulWidget {
+  const LandingPage({super.key, this.sessionExpired = false});
+
+  /// True when this page was reached via AppShell's involuntary-sign-out
+  /// safety net (`frontend/PLAN.md`'s "Session refresh wiring fix"
+  /// addendum, Step 5) rather than a normal cold start or a voluntary sign
+  /// out — shows a brief explanation once, so the redirect doesn't read as
+  /// an unexplained kick-out.
+  final bool sessionExpired;
+
+  @override
+  State<LandingPage> createState() => _LandingPageState();
+}
+
+class _LandingPageState extends State<LandingPage> {
+  @override
+  void initState() {
+    super.initState();
+    if (widget.sessionExpired) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) {
+          showSnack(
+            context,
+            'Your session expired — please sign in again.',
+            type: ToastType.warning,
+          );
+        }
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

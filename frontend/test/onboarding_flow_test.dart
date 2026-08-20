@@ -18,24 +18,31 @@ import 'package:professional_connections_platform/features/onboarding/onboarding
 import 'support/fake_secure_storage_platform.dart';
 
 class _FakeAuthService implements AuthService {
-  _FakeAuthService.success(AuthSession session)
+  _FakeAuthService.success(AuthSession session, {UserProfile? profile})
     : _session = session,
       _error = null,
-      _completer = null;
+      _completer = null,
+      // Keeping the call-site-facing `profile:` name (vs. `_profile:`) is
+      // worth the extra assignment line.
+      // ignore: prefer_initializing_formals
+      _profile = profile;
 
   _FakeAuthService.failure(Object error)
     : _session = null,
       _error = error,
-      _completer = null;
+      _completer = null,
+      _profile = null;
 
   _FakeAuthService.pending()
     : _session = null,
       _error = null,
-      _completer = Completer<AuthSession>();
+      _completer = Completer<AuthSession>(),
+      _profile = null;
 
   final AuthSession? _session;
   final Object? _error;
   final Completer<AuthSession>? _completer;
+  final UserProfile? _profile;
   int callCount = 0;
 
   @override
@@ -88,11 +95,12 @@ class _FakeAuthService implements AuthService {
   ) async => throw UnimplementedError();
 
   // authSessionProvider swallows a getProfile() failure and falls back to
-  // the session-derived profile (app_providers.dart), so UnimplementedError
-  // here doesn't break sign-in — kept simple rather than returning a real
-  // UserProfile, since these tests don't assert on profile contents.
+  // the session-derived profile (app_providers.dart), so throwing when no
+  // _profile was supplied doesn't break sign-in for tests that don't care
+  // about profile contents — only the returning-user tests need a real one.
   @override
-  Future<UserProfile> getProfile() async => throw UnimplementedError();
+  Future<UserProfile> getProfile() async =>
+      _profile ?? (throw UnimplementedError());
 }
 
 final _testSession = AuthSession(
@@ -153,6 +161,74 @@ void main() {
       expect(find.byType(OnboardingFlow), findsNothing);
     },
   );
+
+  group('returning user with some/all Level 2/3 steps already done', () {
+    testWidgets(
+      'skips already-verified steps — only the pending ones are shown',
+      (tester) async {
+        final auth = _FakeAuthService.success(
+          _testSession,
+          profile: const UserProfile(
+            id: 'user-1',
+            fullName: 'Ada Lovelace',
+            phoneVerified: true,
+            workEmailVerified: true,
+            // personalEmailVerified/personalDetailsComplete left false —
+            // these two are the only ones still pending.
+          ),
+        );
+        await tester.pumpWidget(_appWith(auth));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(GradientButton));
+        await tester.pumpAndSettle();
+
+        // Phone is already verified — the sequence must not start there.
+        expect(find.text('Verify Your Phone'), findsNothing);
+        expect(find.text('Verify Your Email'), findsOneWidget);
+
+        await tester.tap(find.text('Skip for now'));
+        await tester.pumpAndSettle();
+
+        // Personal details next, not corporate email — work email is
+        // already verified too, so it must be skipped entirely.
+        expect(find.text('Personal Details'), findsOneWidget);
+
+        await tester.tap(find.text('Skip for now'));
+        await tester.pumpAndSettle();
+
+        // Both pending steps are now done — lands directly on AppShell,
+        // never showing corporate email at all.
+        expect(find.byType(AppShell), findsOneWidget);
+        expect(find.byType(OnboardingFlow), findsNothing);
+      },
+    );
+
+    testWidgets(
+      'a fully-verified returning user sees no verification screens at all',
+      (tester) async {
+        final auth = _FakeAuthService.success(
+          _testSession,
+          profile: const UserProfile(
+            id: 'user-1',
+            fullName: 'Ada Lovelace',
+            phoneVerified: true,
+            personalEmailVerified: true,
+            personalDetailsComplete: true,
+            workEmailVerified: true,
+          ),
+        );
+        await tester.pumpWidget(_appWith(auth));
+        await tester.pumpAndSettle();
+
+        await tester.tap(find.byType(GradientButton));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(AppShell), findsOneWidget);
+        expect(find.byType(OnboardingFlow), findsNothing);
+      },
+    );
+  });
 
   testWidgets('failure path shows the mapped error and stays put', (
     tester,

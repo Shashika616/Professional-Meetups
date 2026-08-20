@@ -1,0 +1,215 @@
+import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
+import 'package:flutter_test/flutter_test.dart';
+
+import 'package:professional_connections_platform/app_shell.dart';
+import 'package:professional_connections_platform/core/models/auth_session.dart';
+import 'package:professional_connections_platform/core/models/user_profile.dart';
+import 'package:professional_connections_platform/core/providers/app_providers.dart';
+import 'package:professional_connections_platform/core/services/auth_service.dart';
+import 'package:professional_connections_platform/features/landing/landing_page.dart';
+
+import 'support/fake_secure_storage_platform.dart';
+
+/// AppShell's HomePage tab (like LandingPage's OrbitingIntents elsewhere in
+/// this test suite) runs a perpetually-repeating animation, so
+/// pumpAndSettle would never converge — bounded pumps instead, polling for
+/// the actual outcome rather than guessing a fixed pump count.
+Future<void> _pumpUntil(WidgetTester tester, bool Function() condition) async {
+  for (var i = 0; i < 20; i++) {
+    if (condition()) return;
+    await tester.pump(const Duration(milliseconds: 100));
+  }
+}
+
+/// getProfile() is the only member completeVerification() reaches in the
+/// second test below — everything else is unreachable and throws if that
+/// assumption ever stops holding. Avoids a real HTTP attempt from
+/// HttpAuthService during a widget test.
+class _FakeAuthService implements AuthService {
+  @override
+  Future<UserProfile> getProfile() async =>
+      const UserProfile(id: 'user-1', fullName: 'Ada Lovelace');
+
+  @override
+  Future<AuthSession> signInWithLinkedIn() async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> refreshSession(String refreshToken) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<void> logout(String refreshToken) async {}
+
+  @override
+  Future<int> startPhoneVerification(String phoneNumber) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthSession> verifyPhoneCode(String phoneNumber, String code) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<int> startPersonalEmailVerification(String email) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthSession> verifyPersonalEmailCode(
+    String email,
+    String code,
+  ) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> submitPersonalDetails(
+    String legalName,
+    String address,
+  ) async => throw UnimplementedError();
+
+  @override
+  Future<int> startCorporateEmailVerification(String email) async =>
+      throw UnimplementedError();
+
+  @override
+  Future<AuthSession> verifyCorporateEmailCode(
+    String email,
+    String code,
+  ) async => throw UnimplementedError();
+}
+
+/// Starts already resolved to a logged-in state — real sign-in/session
+/// loading isn't what this test is about, only what happens when
+/// authSessionProvider's state later flips to logged-out while AppShell is
+/// mounted (`frontend/PLAN.md`'s "Session refresh wiring fix" addendum,
+/// Step 5.2's safety net).
+class _FakeLoggedInNotifier extends AuthSessionNotifier {
+  @override
+  Future<AuthSessionState> build() async {
+    return AuthSessionState(
+      session: AuthSession(
+        userId: 'user-1',
+        accessToken: 'a1',
+        refreshToken: 'r1',
+        trustLevel: 1,
+        isNewUser: false,
+        accessTokenExpiresAt: DateTime.now().add(const Duration(minutes: 15)),
+        fullName: 'Ada Lovelace',
+        profilePhotoUrl: '',
+      ),
+    );
+  }
+}
+
+void main() {
+  setUp(() {
+    // completeVerification() (exercised by the second test below) writes
+    // through the real SecureSessionStorage/FlutterSecureStorage — without
+    // a fake platform registered, that write hangs indefinitely under
+    // flutter_tester (no real Keychain/Keystore channel available), same
+    // setup every other test touching session storage already needs.
+    FlutterSecureStoragePlatform.instance = FakeSecureStoragePlatform();
+  });
+
+  testWidgets(
+    'forcing authSessionProvider to a logged-out state while AppShell is '
+    'showing navigates to LandingPage with the session-expired message',
+    (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          authSessionProvider.overrideWith(_FakeLoggedInNotifier.new),
+          authServiceProvider.overrideWithValue(_FakeAuthService()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: AppShell()),
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        () => find.byType(AppShell).evaluate().isNotEmpty,
+      );
+
+      expect(find.byType(AppShell), findsOneWidget);
+      expect(find.byType(LandingPage), findsNothing);
+
+      container.read(authSessionProvider.notifier).forceSignOut();
+      // Waits for AppShell's old route to actually be gone, not just for
+      // LandingPage to appear — pushAndRemoveUntil's push transition
+      // briefly keeps both in the tree while it animates.
+      await _pumpUntil(
+        tester,
+        () =>
+            find.byType(LandingPage).evaluate().isNotEmpty &&
+            find.byType(AppShell).evaluate().isEmpty,
+      );
+
+      expect(find.byType(LandingPage), findsOneWidget);
+      expect(find.byType(AppShell), findsNothing);
+
+      final landingPage = tester.widget<LandingPage>(find.byType(LandingPage));
+      expect(landingPage.sessionExpired, isTrue);
+
+      // Not the voluntary sign-out confirmation dialog (ProfilePage's Step
+      // 12) — this was involuntary, nothing to confirm.
+      expect(find.text('Sign out of Professional Connections?'), findsNothing);
+
+      // Lets the "session expired" toast's own 2.4s auto-dismiss timer
+      // (ToastService/_ToastCard) run out before the test ends, so it
+      // doesn't get flagged as a pending Timer.
+      await tester.pump(const Duration(milliseconds: 2500));
+    },
+  );
+
+  testWidgets(
+    'a logged-in-to-logged-in transition (no actual sign-out) does not '
+    'navigate away from AppShell',
+    (tester) async {
+      final container = ProviderContainer(
+        overrides: [
+          authSessionProvider.overrideWith(_FakeLoggedInNotifier.new),
+          authServiceProvider.overrideWithValue(_FakeAuthService()),
+        ],
+      );
+      addTearDown(container.dispose);
+
+      await tester.pumpWidget(
+        UncontrolledProviderScope(
+          container: container,
+          child: const MaterialApp(home: AppShell()),
+        ),
+      );
+      await _pumpUntil(
+        tester,
+        () => find.byType(AppShell).evaluate().isNotEmpty,
+      );
+
+      // completeVerification-style update: still logged in afterward, just
+      // a different session — must not be mistaken for a sign-out.
+      await container
+          .read(authSessionProvider.notifier)
+          .completeVerification(
+            AuthSession(
+              userId: 'user-1',
+              accessToken: 'a2',
+              refreshToken: 'r2',
+              trustLevel: 2,
+              isNewUser: false,
+              accessTokenExpiresAt: DateTime.now().add(
+                const Duration(minutes: 15),
+              ),
+              fullName: 'Ada Lovelace',
+              profilePhotoUrl: '',
+            ),
+          );
+      await tester.pump();
+      await tester.pump(const Duration(milliseconds: 200));
+
+      expect(find.byType(AppShell), findsOneWidget);
+      expect(find.byType(LandingPage), findsNothing);
+    },
+  );
+}

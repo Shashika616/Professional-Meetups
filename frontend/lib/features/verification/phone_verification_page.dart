@@ -67,6 +67,11 @@ class _PhoneVerificationPageState extends ConsumerState<PhoneVerificationPage> {
         'We sent a code to $_fullNumber',
         type: ToastType.success,
       );
+    } on SessionExpiredException {
+      // No local error shown here — AppShell's listener navigates to
+      // LandingPage and shows the "session expired" message itself; showing
+      // a second, screen-local message here would be redundant.
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
     } catch (error) {
       if (mounted) {
         showSnack(
@@ -83,16 +88,35 @@ class _PhoneVerificationPageState extends ConsumerState<PhoneVerificationPage> {
   }
 
   Future<void> _verify(String code) async {
-    final session = await ref
-        .read(authServiceProvider)
-        .verifyPhoneCode(_fullNumber, code);
-    await ref.read(authSessionProvider.notifier).completeVerification(session);
-    if (!mounted) return;
-    Navigator.pop(context);
+    try {
+      final session = await ref
+          .read(authServiceProvider)
+          .verifyPhoneCode(_fullNumber, code);
+      await ref
+          .read(authSessionProvider.notifier)
+          .completeVerification(session);
+      if (!mounted) return;
+      Navigator.pop(context);
+    } on SessionExpiredException {
+      // Rethrown so OtpEntry's own catch still surfaces the (specific,
+      // non-generic) message while AppShell's listener navigates away —
+      // forceSignOut() is what actually matters here, not suppressing the
+      // message OtpEntry would otherwise show.
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
+      rethrow;
+    }
   }
 
-  Future<int> _resend() =>
-      ref.read(authServiceProvider).startPhoneVerification(_fullNumber);
+  Future<int> _resend() async {
+    try {
+      return await ref
+          .read(authServiceProvider)
+          .startPhoneVerification(_fullNumber);
+    } on SessionExpiredException {
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
+      rethrow;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {

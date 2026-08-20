@@ -79,6 +79,10 @@ class _CorporateEmailVerificationPageState
       if (!mounted) return;
       setState(() => _resendAfterSeconds = resendAfterSeconds);
       showSnack(context, 'We sent a code to $_email', type: ToastType.success);
+    } on SessionExpiredException {
+      // No local error shown — AppShell's listener navigates to LandingPage
+      // and shows the "session expired" message itself.
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
     } catch (error) {
       // Includes WorkEmailDomainRejectedException — its .message is
       // already the backend's specific rejection text, shown verbatim
@@ -98,16 +102,33 @@ class _CorporateEmailVerificationPageState
   }
 
   Future<void> _verify(String code) async {
-    final session = await ref
-        .read(authServiceProvider)
-        .verifyCorporateEmailCode(_email, code);
-    await ref.read(authSessionProvider.notifier).completeVerification(session);
-    if (!mounted) return;
-    Navigator.pop(context);
+    try {
+      final session = await ref
+          .read(authServiceProvider)
+          .verifyCorporateEmailCode(_email, code);
+      await ref
+          .read(authSessionProvider.notifier)
+          .completeVerification(session);
+      if (!mounted) return;
+      Navigator.pop(context);
+    } on SessionExpiredException {
+      // Rethrown so OtpEntry's own catch still surfaces the (specific,
+      // non-generic) message while AppShell's listener navigates away.
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
+      rethrow;
+    }
   }
 
-  Future<int> _resend() =>
-      ref.read(authServiceProvider).startCorporateEmailVerification(_email);
+  Future<int> _resend() async {
+    try {
+      return await ref
+          .read(authServiceProvider)
+          .startCorporateEmailVerification(_email);
+    } on SessionExpiredException {
+      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
+      rethrow;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
