@@ -21,6 +21,62 @@ const (
 	_ = protoimpl.EnforceVersion(protoimpl.MaxVersion - 20)
 )
 
+// IdentityProviderProto — LINKEDIN is valid for LinkIdentityRequest (the
+// Profile "Connect LinkedIn" flow) but never for CompleteFederatedSignup,
+// which only ever accepts APPLE/GOOGLE (LinkedIn's own direct-signup path
+// is CompleteLinkedInOnboarding, unchanged from ADR-011, not this RPC).
+type IdentityProviderProto int32
+
+const (
+	IdentityProviderProto_IDENTITY_PROVIDER_UNSPECIFIED IdentityProviderProto = 0
+	IdentityProviderProto_IDENTITY_PROVIDER_APPLE       IdentityProviderProto = 1
+	IdentityProviderProto_IDENTITY_PROVIDER_GOOGLE      IdentityProviderProto = 2
+	IdentityProviderProto_IDENTITY_PROVIDER_LINKEDIN    IdentityProviderProto = 3
+)
+
+// Enum value maps for IdentityProviderProto.
+var (
+	IdentityProviderProto_name = map[int32]string{
+		0: "IDENTITY_PROVIDER_UNSPECIFIED",
+		1: "IDENTITY_PROVIDER_APPLE",
+		2: "IDENTITY_PROVIDER_GOOGLE",
+		3: "IDENTITY_PROVIDER_LINKEDIN",
+	}
+	IdentityProviderProto_value = map[string]int32{
+		"IDENTITY_PROVIDER_UNSPECIFIED": 0,
+		"IDENTITY_PROVIDER_APPLE":       1,
+		"IDENTITY_PROVIDER_GOOGLE":      2,
+		"IDENTITY_PROVIDER_LINKEDIN":    3,
+	}
+)
+
+func (x IdentityProviderProto) Enum() *IdentityProviderProto {
+	p := new(IdentityProviderProto)
+	*p = x
+	return p
+}
+
+func (x IdentityProviderProto) String() string {
+	return protoimpl.X.EnumStringOf(x.Descriptor(), protoreflect.EnumNumber(x))
+}
+
+func (IdentityProviderProto) Descriptor() protoreflect.EnumDescriptor {
+	return file_auth_v1_auth_proto_enumTypes[0].Descriptor()
+}
+
+func (IdentityProviderProto) Type() protoreflect.EnumType {
+	return &file_auth_v1_auth_proto_enumTypes[0]
+}
+
+func (x IdentityProviderProto) Number() protoreflect.EnumNumber {
+	return protoreflect.EnumNumber(x)
+}
+
+// Deprecated: Use IdentityProviderProto.Descriptor instead.
+func (IdentityProviderProto) EnumDescriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{0}
+}
+
 // VerificationPurpose is shared across phone/personal-email/corporate-email
 // — one OTP mechanism, three purposes (backend/PLAN.md's addendum, Step
 // C/D), not three separate mechanisms. Redundant with which RPC is called
@@ -35,6 +91,12 @@ const (
 	VerificationPurpose_VERIFICATION_PURPOSE_PHONE           VerificationPurpose = 1
 	VerificationPurpose_VERIFICATION_PURPOSE_PERSONAL_EMAIL  VerificationPurpose = 2
 	VerificationPurpose_VERIFICATION_PURPOSE_CORPORATE_EMAIL VerificationPurpose = 3
+	// Email+password signup (ADR-014 decision #2) — StartEmailSignup is
+	// unauthenticated, so StartVerificationRequest.user_id is always "" for
+	// this purpose; the service layer routes it to the target-keyed
+	// verification_codes methods instead (migration 0004), not the
+	// userID-keyed ones the other three purposes use.
+	VerificationPurpose_VERIFICATION_PURPOSE_EMAIL_SIGNUP VerificationPurpose = 4
 )
 
 // Enum value maps for VerificationPurpose.
@@ -44,12 +106,14 @@ var (
 		1: "VERIFICATION_PURPOSE_PHONE",
 		2: "VERIFICATION_PURPOSE_PERSONAL_EMAIL",
 		3: "VERIFICATION_PURPOSE_CORPORATE_EMAIL",
+		4: "VERIFICATION_PURPOSE_EMAIL_SIGNUP",
 	}
 	VerificationPurpose_value = map[string]int32{
 		"VERIFICATION_PURPOSE_UNSPECIFIED":     0,
 		"VERIFICATION_PURPOSE_PHONE":           1,
 		"VERIFICATION_PURPOSE_PERSONAL_EMAIL":  2,
 		"VERIFICATION_PURPOSE_CORPORATE_EMAIL": 3,
+		"VERIFICATION_PURPOSE_EMAIL_SIGNUP":    4,
 	}
 )
 
@@ -64,11 +128,11 @@ func (x VerificationPurpose) String() string {
 }
 
 func (VerificationPurpose) Descriptor() protoreflect.EnumDescriptor {
-	return file_auth_v1_auth_proto_enumTypes[0].Descriptor()
+	return file_auth_v1_auth_proto_enumTypes[1].Descriptor()
 }
 
 func (VerificationPurpose) Type() protoreflect.EnumType {
-	return &file_auth_v1_auth_proto_enumTypes[0]
+	return &file_auth_v1_auth_proto_enumTypes[1]
 }
 
 func (x VerificationPurpose) Number() protoreflect.EnumNumber {
@@ -77,20 +141,81 @@ func (x VerificationPurpose) Number() protoreflect.EnumNumber {
 
 // Deprecated: Use VerificationPurpose.Descriptor instead.
 func (VerificationPurpose) EnumDescriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{1}
+}
+
+type CompleteFederatedSignupRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Provider            IdentityProviderProto  `protobuf:"varint,1,opt,name=provider,proto3,enum=auth.v1.IdentityProviderProto" json:"provider,omitempty"`
+	IdToken             string                 `protobuf:"bytes,2,opt,name=id_token,json=idToken,proto3" json:"id_token,omitempty"`
+	AgeConfirmedOver_18 bool                   `protobuf:"varint,3,opt,name=age_confirmed_over_18,json=ageConfirmedOver18,proto3" json:"age_confirmed_over_18,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *CompleteFederatedSignupRequest) Reset() {
+	*x = CompleteFederatedSignupRequest{}
+	mi := &file_auth_v1_auth_proto_msgTypes[0]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteFederatedSignupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteFederatedSignupRequest) ProtoMessage() {}
+
+func (x *CompleteFederatedSignupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[0]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteFederatedSignupRequest.ProtoReflect.Descriptor instead.
+func (*CompleteFederatedSignupRequest) Descriptor() ([]byte, []int) {
 	return file_auth_v1_auth_proto_rawDescGZIP(), []int{0}
 }
 
+func (x *CompleteFederatedSignupRequest) GetProvider() IdentityProviderProto {
+	if x != nil {
+		return x.Provider
+	}
+	return IdentityProviderProto_IDENTITY_PROVIDER_UNSPECIFIED
+}
+
+func (x *CompleteFederatedSignupRequest) GetIdToken() string {
+	if x != nil {
+		return x.IdToken
+	}
+	return ""
+}
+
+func (x *CompleteFederatedSignupRequest) GetAgeConfirmedOver_18() bool {
+	if x != nil {
+		return x.AgeConfirmedOver_18
+	}
+	return false
+}
+
 type CompleteLinkedInOnboardingRequest struct {
-	state             protoimpl.MessageState `protogen:"open.v1"`
-	AuthorizationCode string                 `protobuf:"bytes,1,opt,name=authorization_code,json=authorizationCode,proto3" json:"authorization_code,omitempty"`
-	RedirectUri       string                 `protobuf:"bytes,2,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"` // must exactly match the URI used to start the flow
-	unknownFields     protoimpl.UnknownFields
-	sizeCache         protoimpl.SizeCache
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	AuthorizationCode   string                 `protobuf:"bytes,1,opt,name=authorization_code,json=authorizationCode,proto3" json:"authorization_code,omitempty"`
+	RedirectUri         string                 `protobuf:"bytes,2,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"` // must exactly match the URI used to start the flow
+	AgeConfirmedOver_18 bool                   `protobuf:"varint,3,opt,name=age_confirmed_over_18,json=ageConfirmedOver18,proto3" json:"age_confirmed_over_18,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
 }
 
 func (x *CompleteLinkedInOnboardingRequest) Reset() {
 	*x = CompleteLinkedInOnboardingRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[0]
+	mi := &file_auth_v1_auth_proto_msgTypes[1]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -102,7 +227,7 @@ func (x *CompleteLinkedInOnboardingRequest) String() string {
 func (*CompleteLinkedInOnboardingRequest) ProtoMessage() {}
 
 func (x *CompleteLinkedInOnboardingRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[0]
+	mi := &file_auth_v1_auth_proto_msgTypes[1]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -115,7 +240,7 @@ func (x *CompleteLinkedInOnboardingRequest) ProtoReflect() protoreflect.Message 
 
 // Deprecated: Use CompleteLinkedInOnboardingRequest.ProtoReflect.Descriptor instead.
 func (*CompleteLinkedInOnboardingRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{0}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{1}
 }
 
 func (x *CompleteLinkedInOnboardingRequest) GetAuthorizationCode() string {
@@ -128,6 +253,212 @@ func (x *CompleteLinkedInOnboardingRequest) GetAuthorizationCode() string {
 func (x *CompleteLinkedInOnboardingRequest) GetRedirectUri() string {
 	if x != nil {
 		return x.RedirectUri
+	}
+	return ""
+}
+
+func (x *CompleteLinkedInOnboardingRequest) GetAgeConfirmedOver_18() bool {
+	if x != nil {
+		return x.AgeConfirmedOver_18
+	}
+	return false
+}
+
+type LinkIdentityRequest struct {
+	state    protoimpl.MessageState `protogen:"open.v1"`
+	UserId   string                 `protobuf:"bytes,1,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"` // set by gateway from verified JWT
+	Provider IdentityProviderProto  `protobuf:"varint,2,opt,name=provider,proto3,enum=auth.v1.IdentityProviderProto" json:"provider,omitempty"`
+	IdToken  string                 `protobuf:"bytes,3,opt,name=id_token,json=idToken,proto3" json:"id_token,omitempty"` // Apple/Google branch: native-SDK id_token, verified via internal/identity
+	// LinkedIn branch: its flow is authorization-code, not a native-SDK
+	// id_token like Apple/Google, so it needs its own pair of fields on this
+	// one generic message rather than a second RPC.
+	AuthorizationCode string `protobuf:"bytes,4,opt,name=authorization_code,json=authorizationCode,proto3" json:"authorization_code,omitempty"`
+	RedirectUri       string `protobuf:"bytes,5,opt,name=redirect_uri,json=redirectUri,proto3" json:"redirect_uri,omitempty"` // must exactly match the URI used to start the flow
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
+}
+
+func (x *LinkIdentityRequest) Reset() {
+	*x = LinkIdentityRequest{}
+	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LinkIdentityRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LinkIdentityRequest) ProtoMessage() {}
+
+func (x *LinkIdentityRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LinkIdentityRequest.ProtoReflect.Descriptor instead.
+func (*LinkIdentityRequest) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{2}
+}
+
+func (x *LinkIdentityRequest) GetUserId() string {
+	if x != nil {
+		return x.UserId
+	}
+	return ""
+}
+
+func (x *LinkIdentityRequest) GetProvider() IdentityProviderProto {
+	if x != nil {
+		return x.Provider
+	}
+	return IdentityProviderProto_IDENTITY_PROVIDER_UNSPECIFIED
+}
+
+func (x *LinkIdentityRequest) GetIdToken() string {
+	if x != nil {
+		return x.IdToken
+	}
+	return ""
+}
+
+func (x *LinkIdentityRequest) GetAuthorizationCode() string {
+	if x != nil {
+		return x.AuthorizationCode
+	}
+	return ""
+}
+
+func (x *LinkIdentityRequest) GetRedirectUri() string {
+	if x != nil {
+		return x.RedirectUri
+	}
+	return ""
+}
+
+type CompleteEmailSignupRequest struct {
+	state               protoimpl.MessageState `protogen:"open.v1"`
+	Email               string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Code                string                 `protobuf:"bytes,2,opt,name=code,proto3" json:"code,omitempty"`         // the OTP just verified via StartEmailSignup
+	Password            string                 `protobuf:"bytes,3,opt,name=password,proto3" json:"password,omitempty"` // hashed server-side (argon2id) before storage, never logged
+	AgeConfirmedOver_18 bool                   `protobuf:"varint,4,opt,name=age_confirmed_over_18,json=ageConfirmedOver18,proto3" json:"age_confirmed_over_18,omitempty"`
+	unknownFields       protoimpl.UnknownFields
+	sizeCache           protoimpl.SizeCache
+}
+
+func (x *CompleteEmailSignupRequest) Reset() {
+	*x = CompleteEmailSignupRequest{}
+	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *CompleteEmailSignupRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*CompleteEmailSignupRequest) ProtoMessage() {}
+
+func (x *CompleteEmailSignupRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use CompleteEmailSignupRequest.ProtoReflect.Descriptor instead.
+func (*CompleteEmailSignupRequest) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{3}
+}
+
+func (x *CompleteEmailSignupRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *CompleteEmailSignupRequest) GetCode() string {
+	if x != nil {
+		return x.Code
+	}
+	return ""
+}
+
+func (x *CompleteEmailSignupRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
+	}
+	return ""
+}
+
+func (x *CompleteEmailSignupRequest) GetAgeConfirmedOver_18() bool {
+	if x != nil {
+		return x.AgeConfirmedOver_18
+	}
+	return false
+}
+
+type LoginWithPasswordRequest struct {
+	state         protoimpl.MessageState `protogen:"open.v1"`
+	Email         string                 `protobuf:"bytes,1,opt,name=email,proto3" json:"email,omitempty"`
+	Password      string                 `protobuf:"bytes,2,opt,name=password,proto3" json:"password,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
+}
+
+func (x *LoginWithPasswordRequest) Reset() {
+	*x = LoginWithPasswordRequest{}
+	mi := &file_auth_v1_auth_proto_msgTypes[4]
+	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+	ms.StoreMessageInfo(mi)
+}
+
+func (x *LoginWithPasswordRequest) String() string {
+	return protoimpl.X.MessageStringOf(x)
+}
+
+func (*LoginWithPasswordRequest) ProtoMessage() {}
+
+func (x *LoginWithPasswordRequest) ProtoReflect() protoreflect.Message {
+	mi := &file_auth_v1_auth_proto_msgTypes[4]
+	if x != nil {
+		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
+		if ms.LoadMessageInfo() == nil {
+			ms.StoreMessageInfo(mi)
+		}
+		return ms
+	}
+	return mi.MessageOf(x)
+}
+
+// Deprecated: Use LoginWithPasswordRequest.ProtoReflect.Descriptor instead.
+func (*LoginWithPasswordRequest) Descriptor() ([]byte, []int) {
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{4}
+}
+
+func (x *LoginWithPasswordRequest) GetEmail() string {
+	if x != nil {
+		return x.Email
+	}
+	return ""
+}
+
+func (x *LoginWithPasswordRequest) GetPassword() string {
+	if x != nil {
+		return x.Password
 	}
 	return ""
 }
@@ -152,7 +483,7 @@ type SessionResponse struct {
 
 func (x *SessionResponse) Reset() {
 	*x = SessionResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[1]
+	mi := &file_auth_v1_auth_proto_msgTypes[5]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -164,7 +495,7 @@ func (x *SessionResponse) String() string {
 func (*SessionResponse) ProtoMessage() {}
 
 func (x *SessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[1]
+	mi := &file_auth_v1_auth_proto_msgTypes[5]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -177,7 +508,7 @@ func (x *SessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SessionResponse.ProtoReflect.Descriptor instead.
 func (*SessionResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{1}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{5}
 }
 
 func (x *SessionResponse) GetUserId() string {
@@ -238,7 +569,7 @@ type RefreshSessionRequest struct {
 
 func (x *RefreshSessionRequest) Reset() {
 	*x = RefreshSessionRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	mi := &file_auth_v1_auth_proto_msgTypes[6]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -250,7 +581,7 @@ func (x *RefreshSessionRequest) String() string {
 func (*RefreshSessionRequest) ProtoMessage() {}
 
 func (x *RefreshSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[2]
+	mi := &file_auth_v1_auth_proto_msgTypes[6]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -263,7 +594,7 @@ func (x *RefreshSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RefreshSessionRequest.ProtoReflect.Descriptor instead.
 func (*RefreshSessionRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{2}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{6}
 }
 
 func (x *RefreshSessionRequest) GetRefreshToken() string {
@@ -282,7 +613,7 @@ type RevokeSessionRequest struct {
 
 func (x *RevokeSessionRequest) Reset() {
 	*x = RevokeSessionRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	mi := &file_auth_v1_auth_proto_msgTypes[7]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -294,7 +625,7 @@ func (x *RevokeSessionRequest) String() string {
 func (*RevokeSessionRequest) ProtoMessage() {}
 
 func (x *RevokeSessionRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[3]
+	mi := &file_auth_v1_auth_proto_msgTypes[7]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -307,7 +638,7 @@ func (x *RevokeSessionRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeSessionRequest.ProtoReflect.Descriptor instead.
 func (*RevokeSessionRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{3}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{7}
 }
 
 func (x *RevokeSessionRequest) GetRefreshToken() string {
@@ -326,7 +657,7 @@ type RevokeSessionResponse struct {
 
 func (x *RevokeSessionResponse) Reset() {
 	*x = RevokeSessionResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[4]
+	mi := &file_auth_v1_auth_proto_msgTypes[8]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -338,7 +669,7 @@ func (x *RevokeSessionResponse) String() string {
 func (*RevokeSessionResponse) ProtoMessage() {}
 
 func (x *RevokeSessionResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[4]
+	mi := &file_auth_v1_auth_proto_msgTypes[8]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -351,7 +682,7 @@ func (x *RevokeSessionResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use RevokeSessionResponse.ProtoReflect.Descriptor instead.
 func (*RevokeSessionResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{4}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{8}
 }
 
 func (x *RevokeSessionResponse) GetSuccess() bool {
@@ -372,7 +703,7 @@ type StartVerificationRequest struct {
 
 func (x *StartVerificationRequest) Reset() {
 	*x = StartVerificationRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[5]
+	mi := &file_auth_v1_auth_proto_msgTypes[9]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -384,7 +715,7 @@ func (x *StartVerificationRequest) String() string {
 func (*StartVerificationRequest) ProtoMessage() {}
 
 func (x *StartVerificationRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[5]
+	mi := &file_auth_v1_auth_proto_msgTypes[9]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -397,7 +728,7 @@ func (x *StartVerificationRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartVerificationRequest.ProtoReflect.Descriptor instead.
 func (*StartVerificationRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{5}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{9}
 }
 
 func (x *StartVerificationRequest) GetUserId() string {
@@ -433,7 +764,7 @@ type StartVerificationResponse struct {
 
 func (x *StartVerificationResponse) Reset() {
 	*x = StartVerificationResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[6]
+	mi := &file_auth_v1_auth_proto_msgTypes[10]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -445,7 +776,7 @@ func (x *StartVerificationResponse) String() string {
 func (*StartVerificationResponse) ProtoMessage() {}
 
 func (x *StartVerificationResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[6]
+	mi := &file_auth_v1_auth_proto_msgTypes[10]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -458,7 +789,7 @@ func (x *StartVerificationResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use StartVerificationResponse.ProtoReflect.Descriptor instead.
 func (*StartVerificationResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{6}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{10}
 }
 
 func (x *StartVerificationResponse) GetResendAfterSeconds() int32 {
@@ -480,7 +811,7 @@ type VerifyCodeRequest struct {
 
 func (x *VerifyCodeRequest) Reset() {
 	*x = VerifyCodeRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[7]
+	mi := &file_auth_v1_auth_proto_msgTypes[11]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -492,7 +823,7 @@ func (x *VerifyCodeRequest) String() string {
 func (*VerifyCodeRequest) ProtoMessage() {}
 
 func (x *VerifyCodeRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[7]
+	mi := &file_auth_v1_auth_proto_msgTypes[11]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -505,7 +836,7 @@ func (x *VerifyCodeRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use VerifyCodeRequest.ProtoReflect.Descriptor instead.
 func (*VerifyCodeRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{7}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{11}
 }
 
 func (x *VerifyCodeRequest) GetUserId() string {
@@ -547,7 +878,7 @@ type SubmitPersonalDetailsRequest struct {
 
 func (x *SubmitPersonalDetailsRequest) Reset() {
 	*x = SubmitPersonalDetailsRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[8]
+	mi := &file_auth_v1_auth_proto_msgTypes[12]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -559,7 +890,7 @@ func (x *SubmitPersonalDetailsRequest) String() string {
 func (*SubmitPersonalDetailsRequest) ProtoMessage() {}
 
 func (x *SubmitPersonalDetailsRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[8]
+	mi := &file_auth_v1_auth_proto_msgTypes[12]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -572,7 +903,7 @@ func (x *SubmitPersonalDetailsRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use SubmitPersonalDetailsRequest.ProtoReflect.Descriptor instead.
 func (*SubmitPersonalDetailsRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{8}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{12}
 }
 
 func (x *SubmitPersonalDetailsRequest) GetUserId() string {
@@ -605,7 +936,7 @@ type GetProfileRequest struct {
 
 func (x *GetProfileRequest) Reset() {
 	*x = GetProfileRequest{}
-	mi := &file_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_auth_v1_auth_proto_msgTypes[13]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -617,7 +948,7 @@ func (x *GetProfileRequest) String() string {
 func (*GetProfileRequest) ProtoMessage() {}
 
 func (x *GetProfileRequest) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[9]
+	mi := &file_auth_v1_auth_proto_msgTypes[13]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -630,7 +961,7 @@ func (x *GetProfileRequest) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use GetProfileRequest.ProtoReflect.Descriptor instead.
 func (*GetProfileRequest) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{9}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{13}
 }
 
 func (x *GetProfileRequest) GetUserId() string {
@@ -657,13 +988,18 @@ type ProfileResponse struct {
 	PersonalDetailsComplete bool                   `protobuf:"varint,7,opt,name=personal_details_complete,json=personalDetailsComplete,proto3" json:"personal_details_complete,omitempty"`
 	CompanyDomain           string                 `protobuf:"bytes,8,opt,name=company_domain,json=companyDomain,proto3" json:"company_domain,omitempty"`
 	WorkEmailVerified       bool                   `protobuf:"varint,9,opt,name=work_email_verified,json=workEmailVerified,proto3" json:"work_email_verified,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	// Post-meetup star rating aggregate (ADR-015,
+	// docs/02-domain/domain-model.md § Rating) — read here from the same
+	// users columns services/meetup writes to after SubmitRating.
+	RatingAverage float64 `protobuf:"fixed64,10,opt,name=rating_average,json=ratingAverage,proto3" json:"rating_average,omitempty"`
+	RatingCount   int32   `protobuf:"varint,11,opt,name=rating_count,json=ratingCount,proto3" json:"rating_count,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *ProfileResponse) Reset() {
 	*x = ProfileResponse{}
-	mi := &file_auth_v1_auth_proto_msgTypes[10]
+	mi := &file_auth_v1_auth_proto_msgTypes[14]
 	ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 	ms.StoreMessageInfo(mi)
 }
@@ -675,7 +1011,7 @@ func (x *ProfileResponse) String() string {
 func (*ProfileResponse) ProtoMessage() {}
 
 func (x *ProfileResponse) ProtoReflect() protoreflect.Message {
-	mi := &file_auth_v1_auth_proto_msgTypes[10]
+	mi := &file_auth_v1_auth_proto_msgTypes[14]
 	if x != nil {
 		ms := protoimpl.X.MessageStateOf(protoimpl.Pointer(x))
 		if ms.LoadMessageInfo() == nil {
@@ -688,7 +1024,7 @@ func (x *ProfileResponse) ProtoReflect() protoreflect.Message {
 
 // Deprecated: Use ProfileResponse.ProtoReflect.Descriptor instead.
 func (*ProfileResponse) Descriptor() ([]byte, []int) {
-	return file_auth_v1_auth_proto_rawDescGZIP(), []int{10}
+	return file_auth_v1_auth_proto_rawDescGZIP(), []int{14}
 }
 
 func (x *ProfileResponse) GetUserId() string {
@@ -754,14 +1090,47 @@ func (x *ProfileResponse) GetWorkEmailVerified() bool {
 	return false
 }
 
+func (x *ProfileResponse) GetRatingAverage() float64 {
+	if x != nil {
+		return x.RatingAverage
+	}
+	return 0
+}
+
+func (x *ProfileResponse) GetRatingCount() int32 {
+	if x != nil {
+		return x.RatingCount
+	}
+	return 0
+}
+
 var File_auth_v1_auth_proto protoreflect.FileDescriptor
 
 const file_auth_v1_auth_proto_rawDesc = "" +
 	"\n" +
-	"\x12auth/v1/auth.proto\x12\aauth.v1\"\x8a\x01\n" +
+	"\x12auth/v1/auth.proto\x12\aauth.v1\"\xaa\x01\n" +
+	"\x1eCompleteFederatedSignupRequest\x12:\n" +
+	"\bprovider\x18\x01 \x01(\x0e2\x1e.auth.v1.IdentityProviderProtoR\bprovider\x12\x19\n" +
+	"\bid_token\x18\x02 \x01(\tR\aidToken\x121\n" +
+	"\x15age_confirmed_over_18\x18\x03 \x01(\bR\x12ageConfirmedOver18\"\xbd\x01\n" +
 	"!CompleteLinkedInOnboardingRequest\x12-\n" +
 	"\x12authorization_code\x18\x01 \x01(\tR\x11authorizationCode\x12!\n" +
-	"\fredirect_uri\x18\x02 \x01(\tR\vredirectUriJ\x04\b\x03\x10\x04R\rpkce_verifier\"\xa1\x02\n" +
+	"\fredirect_uri\x18\x02 \x01(\tR\vredirectUri\x121\n" +
+	"\x15age_confirmed_over_18\x18\x03 \x01(\bR\x12ageConfirmedOver18J\x04\b\x04\x10\x05R\rpkce_verifier\"\xd7\x01\n" +
+	"\x13LinkIdentityRequest\x12\x17\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\x12:\n" +
+	"\bprovider\x18\x02 \x01(\x0e2\x1e.auth.v1.IdentityProviderProtoR\bprovider\x12\x19\n" +
+	"\bid_token\x18\x03 \x01(\tR\aidToken\x12-\n" +
+	"\x12authorization_code\x18\x04 \x01(\tR\x11authorizationCode\x12!\n" +
+	"\fredirect_uri\x18\x05 \x01(\tR\vredirectUri\"\x95\x01\n" +
+	"\x1aCompleteEmailSignupRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\x12\n" +
+	"\x04code\x18\x02 \x01(\tR\x04code\x12\x1a\n" +
+	"\bpassword\x18\x03 \x01(\tR\bpassword\x121\n" +
+	"\x15age_confirmed_over_18\x18\x04 \x01(\bR\x12ageConfirmedOver18\"L\n" +
+	"\x18LoginWithPasswordRequest\x12\x14\n" +
+	"\x05email\x18\x01 \x01(\tR\x05email\x12\x1a\n" +
+	"\bpassword\x18\x02 \x01(\tR\bpassword\"\xa1\x02\n" +
 	"\x0fSessionResponse\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12!\n" +
 	"\faccess_token\x18\x02 \x01(\tR\vaccessToken\x12#\n" +
@@ -793,7 +1162,7 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"legal_name\x18\x02 \x01(\tR\tlegalName\x12\x18\n" +
 	"\aaddress\x18\x03 \x01(\tR\aaddress\",\n" +
 	"\x11GetProfileRequest\x12\x17\n" +
-	"\auser_id\x18\x01 \x01(\tR\x06userId\"\x86\x03\n" +
+	"\auser_id\x18\x01 \x01(\tR\x06userId\"\xd0\x03\n" +
 	"\x0fProfileResponse\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12\x1b\n" +
 	"\tfull_name\x18\x02 \x01(\tR\bfullName\x12*\n" +
@@ -804,14 +1173,29 @@ const file_auth_v1_auth_proto_rawDesc = "" +
 	"\x17personal_email_verified\x18\x06 \x01(\bR\x15personalEmailVerified\x12:\n" +
 	"\x19personal_details_complete\x18\a \x01(\bR\x17personalDetailsComplete\x12%\n" +
 	"\x0ecompany_domain\x18\b \x01(\tR\rcompanyDomain\x12.\n" +
-	"\x13work_email_verified\x18\t \x01(\bR\x11workEmailVerified*\xae\x01\n" +
+	"\x13work_email_verified\x18\t \x01(\bR\x11workEmailVerified\x12%\n" +
+	"\x0erating_average\x18\n" +
+	" \x01(\x01R\rratingAverage\x12!\n" +
+	"\frating_count\x18\v \x01(\x05R\vratingCount*\x95\x01\n" +
+	"\x15IdentityProviderProto\x12!\n" +
+	"\x1dIDENTITY_PROVIDER_UNSPECIFIED\x10\x00\x12\x1b\n" +
+	"\x17IDENTITY_PROVIDER_APPLE\x10\x01\x12\x1c\n" +
+	"\x18IDENTITY_PROVIDER_GOOGLE\x10\x02\x12\x1e\n" +
+	"\x1aIDENTITY_PROVIDER_LINKEDIN\x10\x03*\xd5\x01\n" +
 	"\x13VerificationPurpose\x12$\n" +
 	" VERIFICATION_PURPOSE_UNSPECIFIED\x10\x00\x12\x1e\n" +
 	"\x1aVERIFICATION_PURPOSE_PHONE\x10\x01\x12'\n" +
 	"#VERIFICATION_PURPOSE_PERSONAL_EMAIL\x10\x02\x12(\n" +
-	"$VERIFICATION_PURPOSE_CORPORATE_EMAIL\x10\x032\xcb\a\n" +
-	"\vAuthService\x12b\n" +
-	"\x1aCompleteLinkedInOnboarding\x12*.auth.v1.CompleteLinkedInOnboardingRequest\x1a\x18.auth.v1.SessionResponse\x12J\n" +
+	"$VERIFICATION_PURPOSE_CORPORATE_EMAIL\x10\x03\x12%\n" +
+	"!VERIFICATION_PURPOSE_EMAIL_SIGNUP\x10\x042\xf4\n" +
+	"\n" +
+	"\vAuthService\x12\\\n" +
+	"\x17CompleteFederatedSignup\x12'.auth.v1.CompleteFederatedSignupRequest\x1a\x18.auth.v1.SessionResponse\x12b\n" +
+	"\x1aCompleteLinkedInOnboarding\x12*.auth.v1.CompleteLinkedInOnboardingRequest\x1a\x18.auth.v1.SessionResponse\x12F\n" +
+	"\fLinkIdentity\x12\x1c.auth.v1.LinkIdentityRequest\x1a\x18.auth.v1.SessionResponse\x12Y\n" +
+	"\x10StartEmailSignup\x12!.auth.v1.StartVerificationRequest\x1a\".auth.v1.StartVerificationResponse\x12T\n" +
+	"\x13CompleteEmailSignup\x12#.auth.v1.CompleteEmailSignupRequest\x1a\x18.auth.v1.SessionResponse\x12P\n" +
+	"\x11LoginWithPassword\x12!.auth.v1.LoginWithPasswordRequest\x1a\x18.auth.v1.SessionResponse\x12J\n" +
 	"\x0eRefreshSession\x12\x1e.auth.v1.RefreshSessionRequest\x1a\x18.auth.v1.SessionResponse\x12N\n" +
 	"\rRevokeSession\x12\x1d.auth.v1.RevokeSessionRequest\x1a\x1e.auth.v1.RevokeSessionResponse\x12_\n" +
 	"\x16StartPhoneVerification\x12!.auth.v1.StartVerificationRequest\x1a\".auth.v1.StartVerificationResponse\x12G\n" +
@@ -836,52 +1220,69 @@ func file_auth_v1_auth_proto_rawDescGZIP() []byte {
 	return file_auth_v1_auth_proto_rawDescData
 }
 
-var file_auth_v1_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 1)
-var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 11)
+var file_auth_v1_auth_proto_enumTypes = make([]protoimpl.EnumInfo, 2)
+var file_auth_v1_auth_proto_msgTypes = make([]protoimpl.MessageInfo, 15)
 var file_auth_v1_auth_proto_goTypes = []any{
-	(VerificationPurpose)(0),                  // 0: auth.v1.VerificationPurpose
-	(*CompleteLinkedInOnboardingRequest)(nil), // 1: auth.v1.CompleteLinkedInOnboardingRequest
-	(*SessionResponse)(nil),                   // 2: auth.v1.SessionResponse
-	(*RefreshSessionRequest)(nil),             // 3: auth.v1.RefreshSessionRequest
-	(*RevokeSessionRequest)(nil),              // 4: auth.v1.RevokeSessionRequest
-	(*RevokeSessionResponse)(nil),             // 5: auth.v1.RevokeSessionResponse
-	(*StartVerificationRequest)(nil),          // 6: auth.v1.StartVerificationRequest
-	(*StartVerificationResponse)(nil),         // 7: auth.v1.StartVerificationResponse
-	(*VerifyCodeRequest)(nil),                 // 8: auth.v1.VerifyCodeRequest
-	(*SubmitPersonalDetailsRequest)(nil),      // 9: auth.v1.SubmitPersonalDetailsRequest
-	(*GetProfileRequest)(nil),                 // 10: auth.v1.GetProfileRequest
-	(*ProfileResponse)(nil),                   // 11: auth.v1.ProfileResponse
+	(IdentityProviderProto)(0),                // 0: auth.v1.IdentityProviderProto
+	(VerificationPurpose)(0),                  // 1: auth.v1.VerificationPurpose
+	(*CompleteFederatedSignupRequest)(nil),    // 2: auth.v1.CompleteFederatedSignupRequest
+	(*CompleteLinkedInOnboardingRequest)(nil), // 3: auth.v1.CompleteLinkedInOnboardingRequest
+	(*LinkIdentityRequest)(nil),               // 4: auth.v1.LinkIdentityRequest
+	(*CompleteEmailSignupRequest)(nil),        // 5: auth.v1.CompleteEmailSignupRequest
+	(*LoginWithPasswordRequest)(nil),          // 6: auth.v1.LoginWithPasswordRequest
+	(*SessionResponse)(nil),                   // 7: auth.v1.SessionResponse
+	(*RefreshSessionRequest)(nil),             // 8: auth.v1.RefreshSessionRequest
+	(*RevokeSessionRequest)(nil),              // 9: auth.v1.RevokeSessionRequest
+	(*RevokeSessionResponse)(nil),             // 10: auth.v1.RevokeSessionResponse
+	(*StartVerificationRequest)(nil),          // 11: auth.v1.StartVerificationRequest
+	(*StartVerificationResponse)(nil),         // 12: auth.v1.StartVerificationResponse
+	(*VerifyCodeRequest)(nil),                 // 13: auth.v1.VerifyCodeRequest
+	(*SubmitPersonalDetailsRequest)(nil),      // 14: auth.v1.SubmitPersonalDetailsRequest
+	(*GetProfileRequest)(nil),                 // 15: auth.v1.GetProfileRequest
+	(*ProfileResponse)(nil),                   // 16: auth.v1.ProfileResponse
 }
 var file_auth_v1_auth_proto_depIdxs = []int32{
-	0,  // 0: auth.v1.StartVerificationRequest.purpose:type_name -> auth.v1.VerificationPurpose
-	0,  // 1: auth.v1.VerifyCodeRequest.purpose:type_name -> auth.v1.VerificationPurpose
-	1,  // 2: auth.v1.AuthService.CompleteLinkedInOnboarding:input_type -> auth.v1.CompleteLinkedInOnboardingRequest
-	3,  // 3: auth.v1.AuthService.RefreshSession:input_type -> auth.v1.RefreshSessionRequest
-	4,  // 4: auth.v1.AuthService.RevokeSession:input_type -> auth.v1.RevokeSessionRequest
-	6,  // 5: auth.v1.AuthService.StartPhoneVerification:input_type -> auth.v1.StartVerificationRequest
-	8,  // 6: auth.v1.AuthService.VerifyPhoneCode:input_type -> auth.v1.VerifyCodeRequest
-	6,  // 7: auth.v1.AuthService.StartPersonalEmailVerification:input_type -> auth.v1.StartVerificationRequest
-	8,  // 8: auth.v1.AuthService.VerifyPersonalEmailCode:input_type -> auth.v1.VerifyCodeRequest
-	9,  // 9: auth.v1.AuthService.SubmitPersonalDetails:input_type -> auth.v1.SubmitPersonalDetailsRequest
-	6,  // 10: auth.v1.AuthService.StartCorporateEmailVerification:input_type -> auth.v1.StartVerificationRequest
-	8,  // 11: auth.v1.AuthService.VerifyCorporateEmailCode:input_type -> auth.v1.VerifyCodeRequest
-	10, // 12: auth.v1.AuthService.GetProfile:input_type -> auth.v1.GetProfileRequest
-	2,  // 13: auth.v1.AuthService.CompleteLinkedInOnboarding:output_type -> auth.v1.SessionResponse
-	2,  // 14: auth.v1.AuthService.RefreshSession:output_type -> auth.v1.SessionResponse
-	5,  // 15: auth.v1.AuthService.RevokeSession:output_type -> auth.v1.RevokeSessionResponse
-	7,  // 16: auth.v1.AuthService.StartPhoneVerification:output_type -> auth.v1.StartVerificationResponse
-	2,  // 17: auth.v1.AuthService.VerifyPhoneCode:output_type -> auth.v1.SessionResponse
-	7,  // 18: auth.v1.AuthService.StartPersonalEmailVerification:output_type -> auth.v1.StartVerificationResponse
-	2,  // 19: auth.v1.AuthService.VerifyPersonalEmailCode:output_type -> auth.v1.SessionResponse
-	2,  // 20: auth.v1.AuthService.SubmitPersonalDetails:output_type -> auth.v1.SessionResponse
-	7,  // 21: auth.v1.AuthService.StartCorporateEmailVerification:output_type -> auth.v1.StartVerificationResponse
-	2,  // 22: auth.v1.AuthService.VerifyCorporateEmailCode:output_type -> auth.v1.SessionResponse
-	11, // 23: auth.v1.AuthService.GetProfile:output_type -> auth.v1.ProfileResponse
-	13, // [13:24] is the sub-list for method output_type
-	2,  // [2:13] is the sub-list for method input_type
-	2,  // [2:2] is the sub-list for extension type_name
-	2,  // [2:2] is the sub-list for extension extendee
-	0,  // [0:2] is the sub-list for field type_name
+	0,  // 0: auth.v1.CompleteFederatedSignupRequest.provider:type_name -> auth.v1.IdentityProviderProto
+	0,  // 1: auth.v1.LinkIdentityRequest.provider:type_name -> auth.v1.IdentityProviderProto
+	1,  // 2: auth.v1.StartVerificationRequest.purpose:type_name -> auth.v1.VerificationPurpose
+	1,  // 3: auth.v1.VerifyCodeRequest.purpose:type_name -> auth.v1.VerificationPurpose
+	2,  // 4: auth.v1.AuthService.CompleteFederatedSignup:input_type -> auth.v1.CompleteFederatedSignupRequest
+	3,  // 5: auth.v1.AuthService.CompleteLinkedInOnboarding:input_type -> auth.v1.CompleteLinkedInOnboardingRequest
+	4,  // 6: auth.v1.AuthService.LinkIdentity:input_type -> auth.v1.LinkIdentityRequest
+	11, // 7: auth.v1.AuthService.StartEmailSignup:input_type -> auth.v1.StartVerificationRequest
+	5,  // 8: auth.v1.AuthService.CompleteEmailSignup:input_type -> auth.v1.CompleteEmailSignupRequest
+	6,  // 9: auth.v1.AuthService.LoginWithPassword:input_type -> auth.v1.LoginWithPasswordRequest
+	8,  // 10: auth.v1.AuthService.RefreshSession:input_type -> auth.v1.RefreshSessionRequest
+	9,  // 11: auth.v1.AuthService.RevokeSession:input_type -> auth.v1.RevokeSessionRequest
+	11, // 12: auth.v1.AuthService.StartPhoneVerification:input_type -> auth.v1.StartVerificationRequest
+	13, // 13: auth.v1.AuthService.VerifyPhoneCode:input_type -> auth.v1.VerifyCodeRequest
+	11, // 14: auth.v1.AuthService.StartPersonalEmailVerification:input_type -> auth.v1.StartVerificationRequest
+	13, // 15: auth.v1.AuthService.VerifyPersonalEmailCode:input_type -> auth.v1.VerifyCodeRequest
+	14, // 16: auth.v1.AuthService.SubmitPersonalDetails:input_type -> auth.v1.SubmitPersonalDetailsRequest
+	11, // 17: auth.v1.AuthService.StartCorporateEmailVerification:input_type -> auth.v1.StartVerificationRequest
+	13, // 18: auth.v1.AuthService.VerifyCorporateEmailCode:input_type -> auth.v1.VerifyCodeRequest
+	15, // 19: auth.v1.AuthService.GetProfile:input_type -> auth.v1.GetProfileRequest
+	7,  // 20: auth.v1.AuthService.CompleteFederatedSignup:output_type -> auth.v1.SessionResponse
+	7,  // 21: auth.v1.AuthService.CompleteLinkedInOnboarding:output_type -> auth.v1.SessionResponse
+	7,  // 22: auth.v1.AuthService.LinkIdentity:output_type -> auth.v1.SessionResponse
+	12, // 23: auth.v1.AuthService.StartEmailSignup:output_type -> auth.v1.StartVerificationResponse
+	7,  // 24: auth.v1.AuthService.CompleteEmailSignup:output_type -> auth.v1.SessionResponse
+	7,  // 25: auth.v1.AuthService.LoginWithPassword:output_type -> auth.v1.SessionResponse
+	7,  // 26: auth.v1.AuthService.RefreshSession:output_type -> auth.v1.SessionResponse
+	10, // 27: auth.v1.AuthService.RevokeSession:output_type -> auth.v1.RevokeSessionResponse
+	12, // 28: auth.v1.AuthService.StartPhoneVerification:output_type -> auth.v1.StartVerificationResponse
+	7,  // 29: auth.v1.AuthService.VerifyPhoneCode:output_type -> auth.v1.SessionResponse
+	12, // 30: auth.v1.AuthService.StartPersonalEmailVerification:output_type -> auth.v1.StartVerificationResponse
+	7,  // 31: auth.v1.AuthService.VerifyPersonalEmailCode:output_type -> auth.v1.SessionResponse
+	7,  // 32: auth.v1.AuthService.SubmitPersonalDetails:output_type -> auth.v1.SessionResponse
+	12, // 33: auth.v1.AuthService.StartCorporateEmailVerification:output_type -> auth.v1.StartVerificationResponse
+	7,  // 34: auth.v1.AuthService.VerifyCorporateEmailCode:output_type -> auth.v1.SessionResponse
+	16, // 35: auth.v1.AuthService.GetProfile:output_type -> auth.v1.ProfileResponse
+	20, // [20:36] is the sub-list for method output_type
+	4,  // [4:20] is the sub-list for method input_type
+	4,  // [4:4] is the sub-list for extension type_name
+	4,  // [4:4] is the sub-list for extension extendee
+	0,  // [0:4] is the sub-list for field type_name
 }
 
 func init() { file_auth_v1_auth_proto_init() }
@@ -894,8 +1295,8 @@ func file_auth_v1_auth_proto_init() {
 		File: protoimpl.DescBuilder{
 			GoPackagePath: reflect.TypeOf(x{}).PkgPath(),
 			RawDescriptor: unsafe.Slice(unsafe.StringData(file_auth_v1_auth_proto_rawDesc), len(file_auth_v1_auth_proto_rawDesc)),
-			NumEnums:      1,
-			NumMessages:   11,
+			NumEnums:      2,
+			NumMessages:   15,
 			NumExtensions: 0,
 			NumServices:   1,
 		},

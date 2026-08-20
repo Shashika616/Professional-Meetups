@@ -8,6 +8,16 @@ import "github.com/professional-connections/backend/services/auth/internal/repos
 // verification field, before the row is persisted or a fresh
 // SessionResponse/JWT is issued.
 //
+// Level 0 (ADR-014): a federated-only account (Apple/Google, no LinkedIn
+// linked) is real and persisted now, not just "mid-signup" — u.LinkedInSub
+// empty is an expected, reachable case, not the impossible one this
+// function's comment used to claim. LinkedIn is a hard prerequisite for
+// Level 2+ (ADR-014 §4, confirmed) — a caller with every Level 2 field set
+// but no LinkedIn linked still computes to 0, not 2; the four
+// verification-completing RPCs in verification.go also reject outright
+// before ever reaching here if LinkedIn isn't linked yet, so this is
+// defense in depth, not the only enforcement point.
+//
 // Level 3 requires Level 2's four conditions to *all* still hold, not just
 // WorkEmailVerified in isolation — a user who verified only corporate email
 // while skipping phone/personal-email/personal-details computes to Level 1,
@@ -17,6 +27,9 @@ import "github.com/professional-connections/backend/services/auth/internal/repos
 // partial-progress signals belong, and that system isn't part of this
 // addendum.
 func computeTrustLevel(u repository.User) int {
+	if u.LinkedInSub == "" {
+		return 0
+	}
 	level2 := u.PhoneNumber != "" && u.PersonalEmail != "" &&
 		u.LegalName != "" && u.Address != ""
 	switch {
@@ -25,6 +38,6 @@ func computeTrustLevel(u repository.User) int {
 	case level2:
 		return 2
 	default:
-		return 1 // linkedin_sub is always set by this point — Level 0/no-account isn't reachable here
+		return 1
 	}
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/professional-connections/backend/services/auth/internal/config"
 	"github.com/professional-connections/backend/services/auth/internal/email"
 	"github.com/professional-connections/backend/services/auth/internal/events"
+	"github.com/professional-connections/backend/services/auth/internal/identity"
 	"github.com/professional-connections/backend/services/auth/internal/linkedin"
 	"github.com/professional-connections/backend/services/auth/internal/repository"
 	"github.com/professional-connections/backend/services/auth/internal/service"
@@ -84,14 +85,31 @@ func run(logger *slog.Logger) error {
 		ClientSecret: cfg.LinkedInClientSecret,
 	})
 
+	// AppleServicesID/GoogleClientID may legitimately be "" here (real
+	// credentials not yet issued, Action Tracker §1) — both providers
+	// still construct successfully and fetch their real JWKS at startup;
+	// Verify simply rejects every token until a real audience is
+	// configured (identity.Verify's own doc comment).
+	appleProvider, err := identity.NewAppleProvider(ctx, cfg.AppleServicesID)
+	if err != nil {
+		return fmt.Errorf("construct apple identity provider: %w", err)
+	}
+	googleProvider, err := identity.NewGoogleProvider(ctx, cfg.GoogleClientID)
+	if err != nil {
+		return fmt.Errorf("construct google identity provider: %w", err)
+	}
+
 	emailSender := newEmailSender(cfg, logger)
 	smsSender := newSmsSender(cfg, logger)
 
 	svc := service.New(
 		repository.NewUserRepository(pool),
+		repository.NewUserIdentityRepository(pool),
 		repository.NewRefreshTokenRepository(pool),
 		repository.NewVerificationCodeRepository(pool),
 		linkedInClient,
+		appleProvider,
+		googleProvider,
 		signer,
 		publisher,
 		emailSender,
@@ -125,16 +143,24 @@ func run(logger *slog.Logger) error {
 	}
 }
 
-// newEmailSender uses ResendEmailSender only once RESEND_API_KEY/
-// RESEND_FROM_EMAIL are both non-empty — LoggingEmailSender otherwise, so
-// local dev/tests keep working before a real Resend account exists
-// (backend/PLAN.md's Level 2/3 addendum, Step A).
+// newEmailSender prefers GmailSMTPEmailSender when GMAIL_ADDRESS/
+// GMAIL_APP_PASSWORD are both set — a Gmail account can send to any
+// recipient immediately, unlike a Resend sandbox account (limited to the
+// account owner's own inbox until a domain is verified there), which makes
+// it the better default for testing signup with arbitrary addresses. Falls
+// back to ResendEmailSender if only Resend is configured, then to
+// LoggingEmailSender if neither is, so local dev/tests keep working before
+// either exists (backend/PLAN.md's Level 2/3 addendum, Step A).
 func newEmailSender(cfg config.Config, logger *slog.Logger) email.EmailSender {
+	if cfg.GmailAddress != "" && cfg.GmailAppPassword != "" {
+		logger.Info("verification email delivery: Gmail SMTP")
+		return email.NewGmailSMTPEmailSender(cfg.GmailAddress, cfg.GmailAppPassword)
+	}
 	if cfg.ResendAPIKey != "" && cfg.ResendFromEmail != "" {
 		logger.Info("verification email delivery: Resend")
 		return email.NewResendEmailSender(cfg.ResendAPIKey, cfg.ResendFromEmail)
 	}
-	logger.Info("verification email delivery: LoggingEmailSender (RESEND_API_KEY/RESEND_FROM_EMAIL not set)")
+	logger.Info("verification email delivery: LoggingEmailSender (GMAIL_ADDRESS/GMAIL_APP_PASSWORD and RESEND_API_KEY/RESEND_FROM_EMAIL not set)")
 	return email.NewLoggingEmailSender()
 }
 

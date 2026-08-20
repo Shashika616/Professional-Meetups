@@ -62,14 +62,14 @@ services:
       - "-database=postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-professional_connections}?sslmode=disable"
       - "up"
 
-  # One-shot: creates the Pub/Sub topics services/auth publishes to, then
-  # exits. Topics aren't auto-created on first publish (real GCP Pub/Sub
-  # isn't either), and the emulator's state is in-memory and wiped on every
-  # restart — without this, PublishUserOnboarded fails every new LinkedIn
-  # user's onboarding with "Topic not found" on a fresh `docker compose up`.
-  # Re-run any time with `docker compose run --rm pubsub-setup`. Tolerates
-  # 409 (topic already exists) so re-running against a still-live emulator
-  # is a no-op, not a failure.
+  # One-shot: creates the Pub/Sub topics services/auth and services/meetup
+  # publish to, then exits. Topics aren't auto-created on first publish
+  # (real GCP Pub/Sub isn't either), and the emulator's state is in-memory
+  # and wiped on every restart — without this, PublishUserOnboarded/
+  # PublishRequestCreated etc. fail with "Topic not found" on a fresh
+  # `docker compose up`. Re-run any time with `docker compose run --rm
+  # pubsub-setup`. Tolerates 409 (topic already exists) so re-running
+  # against a still-live emulator is a no-op, not a failure.
   pubsub-setup:
     image: curlimages/curl:8.10.1
     depends_on:
@@ -78,10 +78,19 @@ services:
     entrypoint: ["sh", "-c"]
     command:
       - |
+        # 60s, not 30s — `depends_on: condition: service_started` only means
+        # the pubsub-emulator container process launched, not that its gcloud
+        # JVM has finished booting and is accepting HTTP requests yet; on a
+        # cold start (fresh volumes, every container starting at once and
+        # competing for CPU) 30s was observed to not always be enough.
         i=0
-        while [ "$$i" -lt 30 ]; do
-          code=$$(curl -s -o /dev/null -w '%{http_code}' -X PUT "http://pubsub-emulator:8085/v1/projects/${GCP_PROJECT_ID:-local-dev}/topics/user-onboarded")
-          if [ "$$code" = "200" ] || [ "$$code" = "409" ]; then exit 0; fi
+        while [ "$$i" -lt 60 ]; do
+          ok=1
+          for topic in user-onboarded meetup-request-created meetup-request-accepted meetup-request-rejected; do
+            code=$$(curl -s -o /dev/null -w '%{http_code}' -X PUT "http://pubsub-emulator:8085/v1/projects/${GCP_PROJECT_ID:-local-dev}/topics/$$topic")
+            if [ "$$code" != "200" ] && [ "$$code" != "409" ]; then ok=0; fi
+          done
+          if [ "$$ok" = "1" ]; then exit 0; fi
           i=$$((i + 1))
           sleep 1
         done
@@ -96,11 +105,14 @@ services:
     depends_on:
       auth:
         condition: service_started
+      meetup:
+        condition: service_started
     ports:
       - "8080:8080"
     environment:
       PORT: 8080
       AUTH_SERVICE_ADDR: auth:9090
+      MEETUP_SERVICE_ADDR: meetup:9091
       REDIS_ADDR: redis:6379
       JWT_PUBLIC_KEY_PATH: /secrets/jwt_public.pem
     volumes:
@@ -127,16 +139,46 @@ services:
       LINKEDIN_CLIENT_ID: ${LINKEDIN_CLIENT_ID}
       LINKEDIN_CLIENT_SECRET: ${LINKEDIN_CLIENT_SECRET}
       LINKEDIN_REDIRECT_URI: ${LINKEDIN_REDIRECT_URI}
+      # Level 0 federated identity (ADR-014) — empty in .env is fine, see
+      # .env.example's own comment: providers fail closed, not startup.
+      APPLE_SERVICES_ID: ${APPLE_SERVICES_ID}
+      GOOGLE_CLIENT_ID: ${GOOGLE_CLIENT_ID}
       # Level 2/3 verification slice (ADR-012 + correction) — empty in
       # .env falls back to LoggingSmsSender/LoggingEmailSender, doesn't
       # break local dev.
       TWILIO_ACCOUNT_SID: ${TWILIO_ACCOUNT_SID}
       TWILIO_AUTH_TOKEN: ${TWILIO_AUTH_TOKEN}
       TWILIO_PHONE_NUMBER: ${TWILIO_PHONE_NUMBER}
+      # Gmail SMTP takes priority over Resend when both are set — see
+      # newEmailSender's own comment for why (no sandbox-recipient
+      # restriction, unlike an unverified Resend account).
+      GMAIL_ADDRESS: ${GMAIL_ADDRESS}
+      GMAIL_APP_PASSWORD: ${GMAIL_APP_PASSWORD}
       RESEND_API_KEY: ${RESEND_API_KEY}
       RESEND_FROM_EMAIL: ${RESEND_FROM_EMAIL}
     volumes:
       - ./secrets:/secrets:ro
+
+  meetup:
+    build:
+      context: .
+      dockerfile: services/meetup/Dockerfile
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      pubsub-setup:
+        condition: service_completed_successfully
+    ports:
+      - "9091:9091" # gRPC — not exposed to the public gateway network in production, only opened here for local debugging
+    environment:
+      GRPC_PORT: 9091
+      DATABASE_URL: postgres://${POSTGRES_USER:-app}:${POSTGRES_PASSWORD:-app}@postgres:5432/${POSTGRES_DB:-professional_connections}?sslmode=disable
+      PUBSUB_EMULATOR_HOST: pubsub-emulator:8085
+      GCP_PROJECT_ID: ${GCP_PROJECT_ID:-local-dev}
+      # Meetup scheduling slice (ADR-013) — empty in .env falls back to
+      # LoggingPushSender, doesn't break local dev.
+      FIREBASE_SERVICE_ACCOUNT_JSON: ${FIREBASE_SERVICE_ACCOUNT_JSON}
 
 volumes:
   postgres-data:

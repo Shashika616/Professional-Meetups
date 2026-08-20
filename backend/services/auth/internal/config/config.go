@@ -21,17 +21,36 @@ type Config struct {
 	LinkedInClientSecret string
 	LinkedInRedirectURI  string
 
-	// Twilio/Resend credentials are deliberately NOT in the required list
-	// below — the Level 2/3 verification addendum (ADR-012) falls back to
-	// LoggingSmsSender/LoggingEmailSender when these are empty, so local
+	// AppleServicesID/GoogleClientID are the expected `aud` claim on each
+	// provider's id_token (ADR-014) — deliberately NOT in the required list
+	// below, same non-blocking treatment as Twilio/Resend: neither
+	// credential exists yet (Action Tracker §1), and internal/identity's
+	// providers fail closed (reject every token) rather than fail to start
+	// when their audience is unconfigured — see identity.Verify's own doc
+	// comment.
+	AppleServicesID string
+	GoogleClientID  string
+
+	// Twilio/Gmail/Resend credentials are deliberately NOT in the required
+	// list below — the Level 2/3 verification addendum (ADR-012) falls back
+	// to LoggingSmsSender/LoggingEmailSender when these are empty, so local
 	// dev/tests keep working before Shashika fills in real credentials for
-	// either or both. main.go decides which sender to construct based on
+	// any of them. main.go decides which sender to construct based on
 	// whether each purpose's full credential set is non-empty.
 	TwilioAccountSID  string
 	TwilioAuthToken   string
 	TwilioPhoneNumber string
-	ResendAPIKey      string
-	ResendFromEmail   string
+
+	// GmailAddress/GmailAppPassword send real verification email via a
+	// personal Gmail account's SMTP relay — preferred over Resend when set,
+	// since a Gmail account can send to any recipient immediately, unlike
+	// Resend's sandbox accounts (limited to the account owner's own inbox
+	// until a domain is verified there). GmailAppPassword must be a Google
+	// App Password, never the account's real login password.
+	GmailAddress     string
+	GmailAppPassword string
+	ResendAPIKey     string
+	ResendFromEmail  string
 }
 
 // Load reads Config from the environment, failing fast if any required
@@ -46,11 +65,17 @@ func Load() (Config, error) {
 		LinkedInClientSecret: os.Getenv("LINKEDIN_CLIENT_SECRET"),
 		LinkedInRedirectURI:  os.Getenv("LINKEDIN_REDIRECT_URI"),
 
+		AppleServicesID: os.Getenv("APPLE_SERVICES_ID"),
+		GoogleClientID:  os.Getenv("GOOGLE_CLIENT_ID"),
+
 		TwilioAccountSID:  os.Getenv("TWILIO_ACCOUNT_SID"),
 		TwilioAuthToken:   os.Getenv("TWILIO_AUTH_TOKEN"),
 		TwilioPhoneNumber: os.Getenv("TWILIO_PHONE_NUMBER"),
-		ResendAPIKey:      os.Getenv("RESEND_API_KEY"),
-		ResendFromEmail:   os.Getenv("RESEND_FROM_EMAIL"),
+
+		GmailAddress:     os.Getenv("GMAIL_ADDRESS"),
+		GmailAppPassword: os.Getenv("GMAIL_APP_PASSWORD"),
+		ResendAPIKey:     os.Getenv("RESEND_API_KEY"),
+		ResendFromEmail:  os.Getenv("RESEND_FROM_EMAIL"),
 	}
 
 	required := []struct {

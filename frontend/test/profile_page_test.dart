@@ -21,7 +21,17 @@ import 'support/fake_secure_storage_platform.dart';
 class _FakeAuthService implements AuthService {
   _FakeAuthService({this.logoutShouldThrow = false, UserProfile? profile})
     : _profile =
-          profile ?? const UserProfile(id: 'user-1', fullName: 'Ada Lovelace');
+          profile ??
+          // trustLevel: 1 (LinkedIn connected) is this fake's default —
+          // most tests in this file are about sign-out/verification-row
+          // behavior for an already-LinkedIn-connected user, not about
+          // Level 0 specifically (see the dedicated Level 0 group below for
+          // that case, ADR-014's Level 0 read-only audit).
+          const UserProfile(
+            id: 'user-1',
+            fullName: 'Ada Lovelace',
+            trustLevel: 1,
+          );
 
   final bool logoutShouldThrow;
   final UserProfile _profile;
@@ -29,7 +39,40 @@ class _FakeAuthService implements AuthService {
   String? lastLogoutRefreshToken;
 
   @override
-  Future<AuthSession> signInWithLinkedIn() async => throw UnimplementedError();
+  Future<AuthSession> signInWithLinkedIn({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signInWithApple({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signInWithGoogle({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signUpWithEmail({
+    required String email,
+    required String code,
+    required String password,
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> loginWithEmail({
+    required String email,
+    required String password,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> linkLinkedIn() async => throw UnimplementedError();
+
+  @override
+  Future<int> startEmailSignupOtp(String email) async =>
+      throw UnimplementedError();
 
   @override
   Future<AuthSession> refreshSession(String refreshToken) async =>
@@ -279,13 +322,13 @@ void main() {
 
   group('LinkedIn verification row (frontend/PLAN.md Step 14)', () {
     testWidgets(
-      'shows Connected with no VERIFY chip once signed in; the other four '
-      'rows are unaffected',
+      'shows LinkedIn Verified with no VERIFY chip once signed in; the '
+      'other four rows are unaffected',
       (tester) async {
         await tester.pumpWidget(_appWith(_FakeAuthService()));
         await tester.pumpAndSettle();
 
-        expect(find.text('Connected'), findsOneWidget);
+        expect(find.text('LinkedIn Verified'), findsOneWidget);
         expect(find.text('Not connected'), findsNothing);
 
         // Only LinkedIn's check icon — Phone/Personal Email/Personal
@@ -298,6 +341,46 @@ void main() {
     );
   });
 
+  group('Level 0 read-only audit (ADR-014)', () {
+    testWidgets(
+      'Level 0 shows the Connect LinkedIn banner, LinkedIn row says Not '
+      'connected, and the four verify chips are locked instead of VERIFY',
+      (tester) async {
+        final auth = _FakeAuthService(
+          profile: const UserProfile(
+            id: 'user-1',
+            fullName: 'Ada Lovelace',
+            trustLevel: 0,
+          ),
+        );
+        await tester.pumpWidget(_appWith(auth));
+        await tester.pumpAndSettle();
+
+        expect(find.text('Connect LinkedIn'), findsOneWidget);
+        expect(find.text('CONNECT LINKEDIN'), findsOneWidget);
+        expect(find.text('Not connected'), findsOneWidget);
+        expect(find.text('LinkedIn Verified'), findsNothing);
+
+        // The four Level 2/3 rows are locked, not offered as VERIFY —
+        // tapping VERIFY at Level 0 would just 403 server-side
+        // (requireLinkedIn).
+        expect(find.text('VERIFY'), findsNothing);
+        expect(find.text('Connect LinkedIn first'), findsNWidgets(4));
+        expect(find.byIcon(Icons.lock_outline_rounded), findsNWidgets(4));
+      },
+    );
+
+    testWidgets('the banner is absent once LinkedIn is connected (Level 1+)', (
+      tester,
+    ) async {
+      await tester.pumpWidget(_appWith(_FakeAuthService()));
+      await tester.pumpAndSettle();
+
+      expect(find.text('Connect LinkedIn'), findsNothing);
+      expect(find.text('CONNECT LINKEDIN'), findsNothing);
+    });
+  });
+
   group('Verification rows (frontend/PLAN.md Level 2/3 addendum, Step 6)', () {
     testWidgets(
       'all four rows show Verified with a check icon once UserProfile '
@@ -307,6 +390,7 @@ void main() {
           profile: const UserProfile(
             id: 'user-1',
             fullName: 'Ada Lovelace',
+            trustLevel: 1,
             phoneVerified: true,
             personalEmailVerified: true,
             personalDetailsComplete: true,
@@ -365,7 +449,10 @@ void main() {
       await tester.pumpWidget(_appWith(_FakeAuthService()));
       await tester.pumpAndSettle();
 
-      await tester.tap(find.text('VERIFY').at(3));
+      final workEmailVerify = find.text('VERIFY').at(3);
+      await tester.ensureVisible(workEmailVerify);
+      await tester.pumpAndSettle();
+      await tester.tap(workEmailVerify);
       await tester.pumpAndSettle();
 
       expect(find.byType(CorporateEmailVerificationPage), findsOneWidget);

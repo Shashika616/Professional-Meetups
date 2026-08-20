@@ -19,8 +19,6 @@ class AppShell extends ConsumerStatefulWidget {
 }
 
 class _AppShellState extends ConsumerState<AppShell> {
-  int currentIndex = 0;
-
   final List<Widget> pages = const [
     HomePage(),
     MatchesPage(),
@@ -29,8 +27,42 @@ class _AppShellState extends ConsumerState<AppShell> {
     ProfilePage(),
   ];
 
+  late final PageController _pageController;
+
+  @override
+  void initState() {
+    super.initState();
+    _pageController = PageController(
+      initialPage: ref.read(currentTabIndexProvider),
+    );
+  }
+
+  @override
+  void dispose() {
+    _pageController.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
+    final currentIndex = ref.watch(currentTabIndexProvider);
+
+    // Keeps the PageView in sync with tab changes that didn't come from a
+    // swipe (the bottom nav bar, or HomePage's FIND MATCHES button jumping
+    // straight to the Matches tab) — a swipe's own onPageChanged below
+    // already updates the provider directly, so this only needs to act
+    // when the provider changed out from under the PageView, not the
+    // other way around (the page?.round() guard is what prevents those
+    // two paths from fighting each other).
+    ref.listen<int>(currentTabIndexProvider, (previous, next) {
+      if (_pageController.hasClients && _pageController.page?.round() != next) {
+        _pageController.animateToPage(
+          next,
+          duration: const Duration(milliseconds: 280),
+          curve: Curves.easeOutCubic,
+        );
+      }
+    });
     // Safety net for any authenticated call site that forgot its own
     // SessionExpiredException catch (`frontend/PLAN.md`'s "Session refresh
     // wiring fix" addendum, Step 5.2): whenever authSessionProvider
@@ -59,10 +91,22 @@ class _AppShellState extends ConsumerState<AppShell> {
     return Scaffold(
       extendBody: true,
       backgroundColor: Colors.transparent,
-      body: AppBackground(child: pages[currentIndex]),
+      body: AppBackground(
+        child: PageView(
+          controller: _pageController,
+          // Swiping is now the second way to switch tabs, alongside
+          // tapping the bottom nav bar — this is what keeps the bar's
+          // highlighted item in sync when the switch came from a swipe
+          // rather than a tap.
+          onPageChanged: (index) =>
+              ref.read(currentTabIndexProvider.notifier).state = index,
+          children: pages,
+        ),
+      ),
       bottomNavigationBar: GlassBottomBar(
         index: currentIndex,
-        onTap: (index) => setState(() => currentIndex = index),
+        onTap: (index) =>
+            ref.read(currentTabIndexProvider.notifier).state = index,
       ),
     );
   }

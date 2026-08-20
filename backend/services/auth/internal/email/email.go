@@ -1,10 +1,12 @@
-// Package email sends OTP verification codes for personal and corporate
-// email verification (backend/PLAN.md's Level 2/3 addendum, Step C/D).
-// Two implementations: LoggingEmailSender (default — logs the code instead
-// of sending, used by local dev and every automated test) and
+// Package email sends OTP verification codes for personal/corporate email
+// verification and email+password signup (backend/PLAN.md's Level 2/3
+// addendum, Step C/D; ADR-014 decision #2). Three implementations:
+// LoggingEmailSender (default — logs the code instead of sending, used by
+// local dev and every automated test), GmailSMTPEmailSender (real delivery
+// via a personal Gmail account's SMTP relay — no sandbox-recipient
+// restriction, useful for testing signup with arbitrary addresses), and
 // ResendEmailSender (real delivery via Resend). Which one main.go wires up
-// is a config switch on whether RESEND_API_KEY/RESEND_FROM_EMAIL are set —
-// see cmd/server/main.go.
+// is a config switch — see cmd/server/main.go's newEmailSender.
 package email
 
 import "context"

@@ -1,0 +1,381 @@
+syntax = "proto3";
+
+package meetup.v1;
+
+option go_package = "github.com/professional-connections/backend/shared/proto/meetup/v1;meetupv1";
+
+// MeetupService is called only by the gateway, over gRPC, inside the private
+// Cloud Run network (ADR-008) — never exposed directly to clients. See
+// backend/meetup-scheduling-PLAN.md for the REST contract the gateway
+// exposes and ADR-013 for the feature this implements.
+//
+// Every RPC below takes the caller's identity (user_id, and trust_level
+// where the RPC needs it) as explicit fields set by the gateway from the
+// verified JWT — never a client-supplied value (same pattern as
+// AuthService's Level 2/3 verification RPCs). Viewing open meetups needs no
+// trust-level gate (ADR-013 § 2 — Level 1 still unlocks browsing); creating
+// one or requesting to join does.
+service MeetupService {
+  // Creates a Meetup. Rejects with PermissionDenied if host_trust_level is
+  // below the per-intent floor (ADR-013 § 2: ride_share/dating need 4,
+  // everything else needs 2) — checked server-side regardless of what the
+  // client's UI already gates on.
+  rpc CreateMeetup(CreateMeetupRequest) returns (MeetupResponse);
+
+  // Lists open meetups for intent, cursor-paginated. No trust-level gate —
+  // Level 1 users can browse (ADR-013 § 2).
+  rpc ListOpenMeetups(ListOpenMeetupsRequest) returns (ListOpenMeetupsResponse);
+
+  // Returns a single meetup. No trust-level gate, same as ListOpenMeetups.
+  rpc GetMeetup(GetMeetupRequest) returns (MeetupResponse);
+
+  // Returns the meetups user_id hosts and the ones they've requested to
+  // join, separately — the "My Meetups" view.
+  rpc ListMyMeetups(ListMyMeetupsRequest) returns (ListMyMeetupsResponse);
+
+  // Returns every request (any status) on a meetup, with requester display
+  // info — the host's request-management view (frontend/meetup-scheduling-
+  // PLAN.md Step 8). Host-only — verified against meetups.host_user_id,
+  // same as RespondToRequest.
+  rpc ListMeetupRequests(ListMeetupRequestsRequest) returns (ListMeetupRequestsResponse);
+
+  // Requests to join a meetup. Rejects with PermissionDenied below the
+  // intent's trust floor, Conflict if the meetup is full/
+  // cancelled/completed or the requester is the host, AlreadyExists if a
+  // pending/accepted request from this requester already exists.
+  rpc RequestToJoin(RequestToJoinRequest) returns (MeetupRequestResponse);
+
+  // Withdraws a still-pending request. Requester-only — verified against
+  // requester_id, not just that *a* valid token was presented.
+  rpc WithdrawRequest(WithdrawRequestRequest) returns (WithdrawRequestResponse);
+
+  // Host accepts or rejects a single request. Host-only — verified against
+  // meetups.host_user_id. Accepting runs the capacity check + auto-reject
+  // transition inside one DB transaction with row locking (backend/
+  // meetup-scheduling-PLAN.md Step B) — a race between two near-simultaneous
+  // accept calls must resolve to exactly one winner, never a double-accept
+  // past capacity.
+  rpc RespondToRequest(RespondToRequestRequest) returns (MeetupRequestResponse);
+
+  // Registers (or re-registers, on rotation) an FCM device token for push
+  // delivery (ADR-013 § 6). Upserts by token, not by user — a token
+  // identifies one physical device install.
+  rpc RegisterDeviceToken(RegisterDeviceTokenRequest) returns (RegisterDeviceTokenResponse);
+
+  // Safety Gate sub-flow (ADR-013 § 3, Safety UX Flows.md): checklist
+  // acknowledgment, live-location opt-in, check-in, post-meetup feedback.
+  // Available once a meetup has at least one accepted request.
+  //
+  // Returns NotFound if the meetup has no Safety Gate state yet (no
+  // accepted request) — distinct from a zero-value SafetyStateResponse, so
+  // a client reopening this meetup later can tell "not started" from
+  // "started, nothing acknowledged yet."
+  rpc GetSafetyState(GetSafetyStateRequest) returns (SafetyStateResponse);
+  rpc AcknowledgeSafetyChecklist(AcknowledgeSafetyChecklistRequest) returns (SafetyStateResponse);
+  rpc SetLiveLocationOptIn(SetLiveLocationOptInRequest) returns (SafetyStateResponse);
+  // Rejects with Conflict if the checklist hasn't been
+  // acknowledged yet — checklist before check-in is the Safety UX Flows.md
+  // step order, enforced server-side, not just by the client's own step
+  // sequencing.
+  rpc CheckIn(CheckInRequest) returns (SafetyStateResponse);
+
+  rpc SubmitMeetupFeedback(SubmitMeetupFeedbackRequest) returns (SubmitMeetupFeedbackResponse);
+
+  // Post-meetup star ratings (ADR-015, docs/02-domain/domain-model.md §
+  // Rating). Returns the caller's other participants on meetup_id (host +
+  // accepted requesters, excluding self), each flagged with whether the
+  // caller already rated them. Empty (not an error) if the caller isn't a
+  // participant.
+  rpc ListRatableParticipants(ListRatableParticipantsRequest) returns (ListRatableParticipantsResponse);
+
+  // Records rater_user_id's score for rated_user_id on meetup_id. Rejects
+  // with Forbidden if rater_user_id isn't a participant of meetup_id, or
+  // hasn't yet confirmed (SubmitMeetupFeedback, happened=true) that the
+  // meetup happened — the rating-eligibility gate is checked against the
+  // *rater* only, not the ratee (a no-show can still be rated by someone
+  // who did attend). Rejects with Conflict on a duplicate (meetup_id,
+  // rater_user_id, rated_user_id) submission, InvalidArgument on a
+  // self-rating attempt or an out-of-range score.
+  rpc SubmitRating(SubmitRatingRequest) returns (SubmitRatingResponse);
+
+  // Host-only "meetup is done" action (ADR-016), reviving meetup_status's
+  // previously-unused COMPLETED value. Rejects with Forbidden if the
+  // caller isn't the host or the window hasn't started yet
+  // (now() >= window_start), Conflict if the meetup is already closed/
+  // cancelled. Explicitly independent of rating eligibility — closing a
+  // meetup has zero effect on who can rate whom, that's still gated on
+  // each participant's own meetup_feedback.happened (ADR-015, unchanged).
+  rpc CloseMeetup(CloseMeetupRequest) returns (CloseMeetupResponse);
+
+  // Host-only, and only before any request has been accepted — cancelling a
+  // meetup with confirmed participants needs its own confirm-and-notify
+  // path (backend/meetup-scheduling-PLAN.md Step C), not a silent status
+  // flip, so this rejects with Conflict in that case.
+  rpc CancelMeetup(CancelMeetupRequest) returns (CancelMeetupResponse);
+}
+
+// Intent mirrors the frontend's IntentType (frontend/lib/core/models/
+// intent_type.dart) and the intent_type Postgres enum (db/migrations) —
+// note the three-way duplication explicitly here, same pattern already used
+// for pure-validator duplication, so a future edit to any one of the three
+// isn't forgotten on the other two.
+enum Intent {
+  INTENT_UNSPECIFIED = 0;
+  INTENT_COFFEE = 1;
+  INTENT_LUNCH = 2;
+  INTENT_NETWORKING = 3;
+  INTENT_MENTORSHIP = 4;
+  INTENT_RIDE_SHARE = 5;
+  INTENT_DATING = 6;
+}
+
+enum MeetupStatus {
+  MEETUP_STATUS_UNSPECIFIED = 0;
+  MEETUP_STATUS_OPEN = 1;
+  MEETUP_STATUS_FULL = 2;
+  MEETUP_STATUS_CANCELLED = 3;
+  MEETUP_STATUS_COMPLETED = 4;
+}
+
+enum MeetupRequestStatus {
+  MEETUP_REQUEST_STATUS_UNSPECIFIED = 0;
+  MEETUP_REQUEST_STATUS_PENDING = 1;
+  MEETUP_REQUEST_STATUS_ACCEPTED = 2;
+  MEETUP_REQUEST_STATUS_REJECTED = 3;
+  MEETUP_REQUEST_STATUS_WITHDRAWN = 4;
+}
+
+message CreateMeetupRequest {
+  string host_user_id = 1;   // set by the gateway from the verified JWT
+  int32 host_trust_level = 2; // set by the gateway from the verified JWT's trust_level claim
+  Intent intent = 3;
+  // Every meetup requires a real time range now (ADR-016) — "today" is
+  // just a window whose date happens to be today, no longer a no-time-
+  // entered special case. Not optional; window_end must be > window_start
+  // (checked both server-side and by the DB's CHECK constraint).
+  int64 window_start_unix_seconds = 4;
+  double location_lat = 5;
+  double location_lng = 6;
+  // Formatted address from Mapbox Search Box, display-only (ADR-013 § 4).
+  string location_label = 7;
+  int32 capacity = 8;
+  int64 window_end_unix_seconds = 9;
+}
+
+// MeetupResponse carries host display info (name/photo/trust level/rating)
+// read directly from the shared users table — the meetup service mostly
+// only reads the public-safe display columns here; as of ADR-015 it also
+// writes rating_average/rating_count (SubmitRating), the one exception to
+// that read-only boundary, justified by services/auth and services/meetup
+// sharing one literal Postgres database.
+message MeetupResponse {
+  string id = 1;
+  string host_user_id = 2;
+  string host_full_name = 3;
+  string host_profile_photo_url = 4;
+  int32 host_trust_level = 5;
+  double host_rating_average = 19;
+  int32 host_rating_count = 20;
+  Intent intent = 6;
+  // Every meetup has a real time range now (ADR-016) — no longer optional.
+  int64 window_start_unix_seconds = 7;
+  double location_lat = 8;
+  double location_lng = 9;
+  string location_label = 10;
+  int32 capacity = 11;
+  int32 accepted_count = 12;
+  MeetupStatus status = 13;
+  int64 created_at_unix_seconds = 14;
+  optional int64 cancelled_at_unix_seconds = 15;
+  // Convenience fields for list rendering (frontend/meetup-scheduling-
+  // PLAN.md Step 3) — computed server-side relative to the requesting
+  // user_id, not derived client-side.
+  bool is_hosted_by_me = 16;
+  optional MeetupRequestStatus my_request_status = 17;
+  // Only meaningful when my_request_status is REJECTED, and only populated
+  // by ListMyMeetups' requested list — distinguishes the host's explicit
+  // rejection from a system auto-reject (capacity filled before the host
+  // acted), per Safety UX Flows.md's "My Meetups" requirement.
+  bool my_request_auto_rejected = 18;
+  int64 window_end_unix_seconds = 21;
+  // Set once the host calls CloseMeetup (ADR-016) — mirrors
+  // cancelled_at_unix_seconds' shape. Independent of rating eligibility —
+  // see CloseMeetup's own doc comment.
+  optional int64 closed_at_unix_seconds = 22;
+}
+
+message ListOpenMeetupsRequest {
+  string user_id = 1;
+  Intent intent = 2;
+  string cursor = 3;   // empty for the first page
+  int32 page_size = 4; // service applies a sane default/cap if unset or too large
+}
+
+message ListOpenMeetupsResponse {
+  repeated MeetupResponse meetups = 1;
+  string next_cursor = 2; // empty when there are no more pages
+}
+
+message GetMeetupRequest {
+  string meetup_id = 1;
+  string user_id = 2; // for computing is_hosted_by_me/my_request_status
+}
+
+message ListMyMeetupsRequest {
+  string user_id = 1;
+}
+
+message ListMyMeetupsResponse {
+  repeated MeetupResponse hosted = 1;
+  repeated MeetupResponse requested = 2;
+}
+
+message ListMeetupRequestsRequest {
+  string meetup_id = 1;
+  string host_user_id = 2; // set by the gateway; must match the meetup's host_user_id
+}
+
+message ListMeetupRequestsResponse {
+  repeated MeetupRequestResponse requests = 1;
+}
+
+message RequestToJoinRequest {
+  string meetup_id = 1;
+  string requester_id = 2;    // set by the gateway from the verified JWT
+  int32 requester_trust_level = 3; // set by the gateway from the verified JWT's trust_level claim
+}
+
+// MeetupRequestResponse carries requester display info the same way
+// MeetupResponse carries host display info.
+message MeetupRequestResponse {
+  string id = 1;
+  string meetup_id = 2;
+  string requester_id = 3;
+  string requester_full_name = 4;
+  string requester_profile_photo_url = 5;
+  int32 requester_trust_level = 6;
+  MeetupRequestStatus status = 7;
+  bool auto_rejected = 8;
+  int64 created_at_unix_seconds = 9;
+  optional int64 resolved_at_unix_seconds = 10;
+  double requester_rating_average = 11;
+  int32 requester_rating_count = 12;
+}
+
+message WithdrawRequestRequest {
+  string request_id = 1;
+  string requester_id = 2; // set by the gateway; must match the request's own requester_id
+}
+
+message WithdrawRequestResponse {
+  bool success = 1;
+}
+
+message RespondToRequestRequest {
+  string request_id = 1;
+  string host_user_id = 2; // set by the gateway; must match the meetup's host_user_id
+  bool accept = 3;
+}
+
+message RegisterDeviceTokenRequest {
+  string user_id = 1;
+  string fcm_token = 2;
+}
+
+message RegisterDeviceTokenResponse {
+  bool success = 1;
+}
+
+message GetSafetyStateRequest {
+  string meetup_id = 1;
+}
+
+message AcknowledgeSafetyChecklistRequest {
+  string meetup_id = 1;
+  string user_id = 2;
+}
+
+message SetLiveLocationOptInRequest {
+  string meetup_id = 1;
+  string user_id = 2;
+  bool opt_in = 3;
+}
+
+message CheckInRequest {
+  string meetup_id = 1;
+  string user_id = 2;
+}
+
+message SafetyStateResponse {
+  string meetup_id = 1;
+  optional int64 checklist_ack_at_unix_seconds = 2;
+  bool live_location_opt_in = 3;
+  optional int64 checked_in_at_unix_seconds = 4;
+}
+
+message SubmitMeetupFeedbackRequest {
+  string meetup_id = 1;
+  string user_id = 2;
+  bool happened = 3;
+  optional bool felt_safe = 4;
+  optional bool profile_accurate = 5;
+  optional bool would_meet_again = 6;
+  // Free-text, optional (ADR-016) — the second, optional step after the
+  // happened/didn't-happen choice. meetup_feedback.submitted_at already
+  // records real confirmation wall-clock time independent of the meetup's
+  // scheduled window; nothing new needed there.
+  optional string notes = 7;
+}
+
+message SubmitMeetupFeedbackResponse {
+  bool success = 1;
+}
+
+message ListRatableParticipantsRequest {
+  string meetup_id = 1;
+  string viewer_id = 2; // set by the gateway from the verified JWT
+}
+
+message RatableParticipant {
+  string user_id = 1;
+  string full_name = 2;
+  string profile_photo_url = 3;
+  int32 trust_level = 4;
+  // True if viewer_id already submitted a rating for this participant on
+  // this meetup — the frontend uses this to only prompt for the ones still
+  // outstanding.
+  bool already_rated = 5;
+}
+
+message ListRatableParticipantsResponse {
+  repeated RatableParticipant participants = 1;
+}
+
+message SubmitRatingRequest {
+  string meetup_id = 1;
+  string rater_user_id = 2; // set by the gateway from the verified JWT
+  string rated_user_id = 3;
+  int32 score = 4; // 1-5
+}
+
+message SubmitRatingResponse {
+  bool success = 1;
+}
+
+message CloseMeetupRequest {
+  string meetup_id = 1;
+  string host_user_id = 2; // set by the gateway from the verified JWT, never client-supplied
+}
+
+message CloseMeetupResponse {
+  MeetupResponse meetup = 1;
+}
+
+message CancelMeetupRequest {
+  string meetup_id = 1;
+  string host_user_id = 2; // set by the gateway; must match the meetup's host_user_id
+}
+
+message CancelMeetupResponse {
+  bool success = 1;
+}

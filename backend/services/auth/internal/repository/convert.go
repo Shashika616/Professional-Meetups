@@ -62,3 +62,15 @@ func uuidPtrOrNil(id pgtype.UUID) *string {
 func pgtypeUUID(id uuid.UUID) pgtype.UUID {
 	return pgtype.UUID{Bytes: id, Valid: true}
 }
+
+// numericToFloat64 converts users.rating_average (NUMERIC(3,2), NOT NULL
+// DEFAULT 0, written by services/meetup — ADR-015) to a plain float64.
+// Falls back to 0 on an invalid/unparseable value rather than propagating
+// an error — the column always has a well-formed default.
+func numericToFloat64(n pgtype.Numeric) float64 {
+	f, err := n.Float64Value()
+	if err != nil || !f.Valid {
+		return 0
+	}
+	return f.Float64
+}

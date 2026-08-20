@@ -13,19 +13,24 @@ import (
 )
 
 const createUser = `-- name: CreateUser :one
-INSERT INTO users (linkedin_sub, full_name, profile_photo_url, headline, trust_level)
-VALUES ($1, $2, $3, $4, $5)
-RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at
+INSERT INTO users (linkedin_sub, full_name, profile_photo_url, headline, trust_level, age_confirmed_over_18, age_confirmed_at)
+VALUES ($1, $2, $3, $4, $5, $6, CASE WHEN $6 THEN now() ELSE NULL END)
+RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count
 `
 
 type CreateUserParams struct {
-	LinkedinSub     pgtype.Text `json:"linkedin_sub"`
-	FullName        string      `json:"full_name"`
-	ProfilePhotoUrl pgtype.Text `json:"profile_photo_url"`
-	Headline        pgtype.Text `json:"headline"`
-	TrustLevel      int16       `json:"trust_level"`
+	LinkedinSub        pgtype.Text `json:"linkedin_sub"`
+	FullName           string      `json:"full_name"`
+	ProfilePhotoUrl    pgtype.Text `json:"profile_photo_url"`
+	Headline           pgtype.Text `json:"headline"`
+	TrustLevel         int16       `json:"trust_level"`
+	AgeConfirmedOver18 bool        `json:"age_confirmed_over_18"`
 }
 
+// age_confirmed_at is set to now() only when age_confirmed_over_18 is true
+// (the only case CreateUser is ever called with, in practice — the service
+// layer rejects false before reaching here) — never backdated, never set
+// for a false confirmation.
 func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, error) {
 	row := q.db.QueryRow(ctx, createUser,
 		arg.LinkedinSub,
@@ -33,6 +38,7 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		arg.ProfilePhotoUrl,
 		arg.Headline,
 		arg.TrustLevel,
+		arg.AgeConfirmedOver18,
 	)
 	var i User
 	err := row.Scan(
@@ -52,12 +58,17 @@ func (q *Queries) CreateUser(ctx context.Context, arg CreateUserParams) (User, e
 		&i.CompanyDomain,
 		&i.WorkEmailVerified,
 		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
 	)
 	return i, err
 }
 
 const getUserByID = `-- name: GetUserByID :one
-SELECT id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at FROM users WHERE id = $1
+SELECT id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count FROM users WHERE id = $1
 `
 
 func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
@@ -80,12 +91,17 @@ func (q *Queries) GetUserByID(ctx context.Context, id uuid.UUID) (User, error) {
 		&i.CompanyDomain,
 		&i.WorkEmailVerified,
 		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
 	)
 	return i, err
 }
 
 const getUserByLinkedInSub = `-- name: GetUserByLinkedInSub :one
-SELECT id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at FROM users WHERE linkedin_sub = $1
+SELECT id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count FROM users WHERE linkedin_sub = $1
 `
 
 func (q *Queries) GetUserByLinkedInSub(ctx context.Context, linkedinSub pgtype.Text) (User, error) {
@@ -108,12 +124,148 @@ func (q *Queries) GetUserByLinkedInSub(ctx context.Context, linkedinSub pgtype.T
 		&i.CompanyDomain,
 		&i.WorkEmailVerified,
 		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
+	)
+	return i, err
+}
+
+const getUserByPersonalEmail = `-- name: GetUserByPersonalEmail :one
+SELECT id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count FROM users WHERE personal_email = $1
+`
+
+// personal_email's mere presence already means "verified" in this schema
+// (same "presence IS the signal" convention as linkedin_sub/phone_number —
+// it's only ever written via UpdateUserPersonalEmail, which only runs
+// after a successful OTP check) — no separate boolean to check here.
+// Used by SignUpOrRecoverWithEmail (ADR-014 decision #3) to detect the
+// recovery case: an email+password signup against an address that's
+// already someone's verified personal_email.
+func (q *Queries) GetUserByPersonalEmail(ctx context.Context, personalEmail pgtype.Text) (User, error) {
+	row := q.db.QueryRow(ctx, getUserByPersonalEmail, personalEmail)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.LinkedinSub,
+		&i.FullName,
+		&i.ProfilePhotoUrl,
+		&i.Headline,
+		&i.TrustLevel,
+		&i.AccountStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PhoneNumber,
+		&i.PersonalEmail,
+		&i.LegalName,
+		&i.Address,
+		&i.CompanyDomain,
+		&i.WorkEmailVerified,
+		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
+	)
+	return i, err
+}
+
+const setUserPasswordHash = `-- name: SetUserPasswordHash :one
+UPDATE users SET password_hash = $2 WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count
+`
+
+type SetUserPasswordHashParams struct {
+	ID           uuid.UUID   `json:"id"`
+	PasswordHash pgtype.Text `json:"password_hash"`
+}
+
+// Used both by fresh email+password signup and by
+// SignUpOrRecoverWithEmail's recovery path (ADR-014 decision #3) — setting
+// a password on an existing account is the entire recovery mechanism,
+// there's no separate "recover" mutation. hash is always an argon2id hash,
+// never the raw password (internal/service's password.go).
+func (q *Queries) SetUserPasswordHash(ctx context.Context, arg SetUserPasswordHashParams) (User, error) {
+	row := q.db.QueryRow(ctx, setUserPasswordHash, arg.ID, arg.PasswordHash)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.LinkedinSub,
+		&i.FullName,
+		&i.ProfilePhotoUrl,
+		&i.Headline,
+		&i.TrustLevel,
+		&i.AccountStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PhoneNumber,
+		&i.PersonalEmail,
+		&i.LegalName,
+		&i.Address,
+		&i.CompanyDomain,
+		&i.WorkEmailVerified,
+		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
+	)
+	return i, err
+}
+
+const updateUserLinkedInSub = `-- name: UpdateUserLinkedInSub :one
+UPDATE users SET linkedin_sub = $2, trust_level = $3 WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count
+`
+
+type UpdateUserLinkedInSubParams struct {
+	ID          uuid.UUID   `json:"id"`
+	LinkedinSub pgtype.Text `json:"linkedin_sub"`
+	TrustLevel  int16       `json:"trust_level"`
+}
+
+// The LinkedIn branch of LinkIdentityToUser (ADR-014) — links LinkedIn to
+// an already-authenticated Level 0+ account (Profile's "Connect LinkedIn").
+// Direct LinkedIn signup (CompleteLinkedInOnboarding, unchanged by this
+// slice) still creates accounts via CreateUser directly; this query is
+// only for the linking-to-an-existing-account path. The partial unique
+// index idx_users_linkedin_sub (migration 0001) is what actually rejects
+// linking a LinkedIn subject already claimed by a different user — the
+// caller (internal/service) maps that 23505 into apperror.ErrConflict,
+// same pattern as UpdateUserPhoneNumber/UpdateUserPersonalEmail below.
+func (q *Queries) UpdateUserLinkedInSub(ctx context.Context, arg UpdateUserLinkedInSubParams) (User, error) {
+	row := q.db.QueryRow(ctx, updateUserLinkedInSub, arg.ID, arg.LinkedinSub, arg.TrustLevel)
+	var i User
+	err := row.Scan(
+		&i.ID,
+		&i.LinkedinSub,
+		&i.FullName,
+		&i.ProfilePhotoUrl,
+		&i.Headline,
+		&i.TrustLevel,
+		&i.AccountStatus,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+		&i.PhoneNumber,
+		&i.PersonalEmail,
+		&i.LegalName,
+		&i.Address,
+		&i.CompanyDomain,
+		&i.WorkEmailVerified,
+		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
 	)
 	return i, err
 }
 
 const updateUserPersonalDetails = `-- name: UpdateUserPersonalDetails :one
-UPDATE users SET legal_name = $2, address = $3, trust_level = $4 WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at
+UPDATE users SET legal_name = $2, address = $3, trust_level = $4 WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count
 `
 
 type UpdateUserPersonalDetailsParams struct {
@@ -148,12 +300,17 @@ func (q *Queries) UpdateUserPersonalDetails(ctx context.Context, arg UpdateUserP
 		&i.CompanyDomain,
 		&i.WorkEmailVerified,
 		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
 	)
 	return i, err
 }
 
 const updateUserPersonalEmail = `-- name: UpdateUserPersonalEmail :one
-UPDATE users SET personal_email = $2, trust_level = $3 WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at
+UPDATE users SET personal_email = $2, trust_level = $3 WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count
 `
 
 type UpdateUserPersonalEmailParams struct {
@@ -182,13 +339,18 @@ func (q *Queries) UpdateUserPersonalEmail(ctx context.Context, arg UpdateUserPer
 		&i.CompanyDomain,
 		&i.WorkEmailVerified,
 		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
 	)
 	return i, err
 }
 
 const updateUserPhoneNumber = `-- name: UpdateUserPhoneNumber :one
 
-UPDATE users SET phone_number = $2, trust_level = $3 WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at
+UPDATE users SET phone_number = $2, trust_level = $3 WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count
 `
 
 type UpdateUserPhoneNumberParams struct {
@@ -222,13 +384,18 @@ func (q *Queries) UpdateUserPhoneNumber(ctx context.Context, arg UpdateUserPhone
 		&i.CompanyDomain,
 		&i.WorkEmailVerified,
 		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
 	)
 	return i, err
 }
 
 const updateUserWorkEmailVerified = `-- name: UpdateUserWorkEmailVerified :one
 UPDATE users SET company_domain = $2, work_email_verified = $3, work_email_verified_at = $4, trust_level = $5
-WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at
+WHERE id = $1 RETURNING id, linkedin_sub, full_name, profile_photo_url, headline, trust_level, account_status, created_at, updated_at, phone_number, personal_email, legal_name, address, company_domain, work_email_verified, work_email_verified_at, age_confirmed_over_18, age_confirmed_at, password_hash, rating_average, rating_count
 `
 
 type UpdateUserWorkEmailVerifiedParams struct {
@@ -265,6 +432,11 @@ func (q *Queries) UpdateUserWorkEmailVerified(ctx context.Context, arg UpdateUse
 		&i.CompanyDomain,
 		&i.WorkEmailVerified,
 		&i.WorkEmailVerifiedAt,
+		&i.AgeConfirmedOver18,
+		&i.AgeConfirmedAt,
+		&i.PasswordHash,
+		&i.RatingAverage,
+		&i.RatingCount,
 	)
 	return i, err
 }

@@ -19,6 +19,7 @@ import (
 	"github.com/professional-connections/backend/services/gateway/internal/authclient"
 	"github.com/professional-connections/backend/services/gateway/internal/config"
 	"github.com/professional-connections/backend/services/gateway/internal/handlers"
+	"github.com/professional-connections/backend/services/gateway/internal/meetupclient"
 	"github.com/professional-connections/backend/services/gateway/internal/middleware"
 	sharedjwt "github.com/professional-connections/backend/shared/jwt"
 	"github.com/professional-connections/backend/shared/logging"
@@ -56,6 +57,16 @@ func run(logger *slog.Logger) error {
 		}
 	}()
 
+	meetup, err := meetupclient.New(cfg.MeetupServiceAddr)
+	if err != nil {
+		return fmt.Errorf("connect to meetup service: %w", err)
+	}
+	defer func() {
+		if err := meetup.Close(); err != nil {
+			logger.Error("closing meetup client", "error", err)
+		}
+	}()
+
 	redisClient := redis.NewClient(&redis.Options{Addr: cfg.RedisAddr})
 	defer func() {
 		if err := redisClient.Close(); err != nil {
@@ -77,16 +88,17 @@ func run(logger *slog.Logger) error {
 	}
 
 	mux := http.NewServeMux()
-	handlers.New(auth, verifier).Register(mux)
+	handlers.New(auth, meetup, verifier).Register(mux)
 
-	// Every route in this slice is under /v1/auth/* or /v1/verification/*
-	// plus /v1/users/me (PLAN.md's scope boundary — no matching/messaging
-	// endpoints yet), so rate limiting the whole mux is equivalent to
-	// scoping it per-route — the new verification routes are meant to share
-	// the same IP-based limit (backend/PLAN.md's Level 2/3 addendum, Step G:
-	// registering them here, not writing a second limiter). Revisit this if
-	// a non-auth route is ever added here — it should not inherit the same
-	// pre-auth-abuse rate limit.
+	// middleware.RateLimit keys its fixed window on (IP, route path), so
+	// wrapping the whole mux gives every route — /v1/auth/*,
+	// /v1/verification/*, /v1/users/me, and now /v1/meetups/* — its own
+	// independent 20-req/min-per-IP limit, not one shared budget across all
+	// of them. CreateMeetup/RequestToJoin are meant to share this same
+	// mechanism (backend/meetup-scheduling-PLAN.md Step D: a spam-created-
+	// meetups or spam-join-requests vector is the same shape of abuse as
+	// spam-OTP-sends), so no second limiter was needed when those routes
+	// were added.
 	var handler http.Handler = mux
 	handler = middleware.RateLimit(redisClient)(handler)
 	handler = middleware.RequestLogging(logger)(handler)

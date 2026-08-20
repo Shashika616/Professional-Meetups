@@ -3,12 +3,13 @@ import 'package:riverpod/legacy.dart' show StateProvider;
 
 import 'package:professional_connections_platform/core/models/auth_session.dart';
 import 'package:professional_connections_platform/core/models/intent_type.dart';
-import 'package:professional_connections_platform/core/models/match_profile.dart';
+import 'package:professional_connections_platform/core/models/meetup.dart';
 import 'package:professional_connections_platform/core/models/paged_result.dart';
 import 'package:professional_connections_platform/core/models/user_profile.dart';
 import 'package:professional_connections_platform/core/services/auth_service.dart';
 import 'package:professional_connections_platform/core/services/http_auth_service.dart';
-import 'package:professional_connections_platform/core/services/matching_service.dart';
+import 'package:professional_connections_platform/core/services/http_meetup_service.dart';
+import 'package:professional_connections_platform/core/services/meetup_service.dart';
 import 'package:professional_connections_platform/core/services/token_refresher.dart';
 import 'package:professional_connections_platform/core/storage/session_storage.dart';
 
@@ -21,18 +22,29 @@ final sessionStorageProvider = Provider<SecureSessionStorage>(
 // getAccessToken callback — a naive circular dependency if built as two
 // independent providers. Both are constructed once here, in a single
 // provider body (the `late final service` trick), and authServiceProvider/
-// tokenRefresherProvider below just proxy into this shared bundle — never
-// authSessionProvider, which this bundle must stay independent of (see the
-// note on _AuthBundle itself).
+// tokenRefresherProvider/meetupServiceProvider below just proxy into this
+// shared bundle — never authSessionProvider, which this bundle must stay
+// independent of (see the note on _AuthBundle itself).
+// HttpMeetupService reuses the same TokenRefresher instance rather than
+// constructing a second one (frontend/meetup-scheduling-PLAN.md Step 4) —
+// there is exactly one proactive-refresh mechanism for the app's lifetime,
+// not one per service.
 final _authBundleProvider = Provider<_AuthBundle>((ref) {
   final storage = ref.read(sessionStorageProvider);
-  late final HttpAuthService service;
+  late final HttpAuthService authService;
   final refresher = TokenRefresher(
     storage: storage,
-    refreshSession: (token) => service.refreshSession(token),
+    refreshSession: (token) => authService.refreshSession(token),
   );
-  service = HttpAuthService(getAccessToken: refresher.getValidAccessToken);
-  return _AuthBundle(service: service, refresher: refresher);
+  authService = HttpAuthService(getAccessToken: refresher.getValidAccessToken);
+  final meetupService = HttpMeetupService(
+    getAccessToken: refresher.getValidAccessToken,
+  );
+  return _AuthBundle(
+    service: authService,
+    refresher: refresher,
+    meetupService: meetupService,
+  );
 });
 
 // Never reads authSessionProvider — HttpAuthService's verification/profile
@@ -51,25 +63,45 @@ final tokenRefresherProvider = Provider<TokenRefresher>(
   (ref) => ref.read(_authBundleProvider).refresher,
 );
 
+final meetupServiceProvider = Provider<MeetupService>(
+  (ref) => ref.read(_authBundleProvider).meetupService,
+);
+
 class _AuthBundle {
-  const _AuthBundle({required this.service, required this.refresher});
+  const _AuthBundle({
+    required this.service,
+    required this.refresher,
+    required this.meetupService,
+  });
 
   final HttpAuthService service;
   final TokenRefresher refresher;
+  final HttpMeetupService meetupService;
 }
-
-final matchingServiceProvider = Provider<MatchingService>(
-  (ref) => MockMatchingService(),
-);
 
 final selectedIntentProvider = StateProvider<IntentType>(
   (ref) => IntentType.coffee,
 );
 
-final matchesProvider = FutureProvider.autoDispose
-    .family<PagedResult<MatchProfile>, IntentType>(
+/// AppShell's bottom-nav tab index — a provider rather than AppShell's own
+/// local `setState` so another page (HomePage's "FIND MATCHES" button) can
+/// switch tabs too, not just the bottom nav bar itself.
+final currentTabIndexProvider = StateProvider<int>((ref) => 0);
+
+/// Open meetups for the currently-selected intent — replaces the mock
+/// matchesProvider (ADR-013 § 7). `.autoDispose` so a stale page isn't kept
+/// alive after the user navigates away from the browse tab.
+final openMeetupsProvider = FutureProvider.autoDispose
+    .family<PagedResult<Meetup>, IntentType>(
       (ref, intent) =>
-          ref.watch(matchingServiceProvider).fetchMatches(intent: intent),
+          ref.watch(meetupServiceProvider).listOpenMeetups(intent: intent),
+    );
+
+/// The signed-in user's hosted + requested meetups — "My Meetups"
+/// (frontend/meetup-scheduling-PLAN.md Step 8).
+final myMeetupsProvider =
+    FutureProvider.autoDispose<({List<Meetup> hosted, List<Meetup> requested})>(
+      (ref) => ref.read(meetupServiceProvider).listMyMeetups(),
     );
 
 final homeStatsProvider = FutureProvider.autoDispose<Map<String, dynamic>>((
@@ -119,10 +151,66 @@ class AuthSessionNotifier extends AsyncNotifier<AuthSessionState> {
     }
   }
 
-  Future<void> signInWithLinkedIn() async {
+  Future<void> signInWithLinkedIn({required bool ageConfirmedOver18}) =>
+      _completeSignIn(
+        () => ref
+            .read(authServiceProvider)
+            .signInWithLinkedIn(ageConfirmedOver18: ageConfirmedOver18),
+      );
+
+  /// ADR-014's three additional account-creation paths — each just calls a
+  /// different [AuthService] method, then shares the exact same
+  /// save-session-and-fetch-profile tail as [signInWithLinkedIn] via
+  /// [_completeSignIn], so that bookkeeping isn't duplicated four times.
+  Future<void> signInWithApple({required bool ageConfirmedOver18}) =>
+      _completeSignIn(
+        () => ref
+            .read(authServiceProvider)
+            .signInWithApple(ageConfirmedOver18: ageConfirmedOver18),
+      );
+
+  Future<void> signInWithGoogle({required bool ageConfirmedOver18}) =>
+      _completeSignIn(
+        () => ref
+            .read(authServiceProvider)
+            .signInWithGoogle(ageConfirmedOver18: ageConfirmedOver18),
+      );
+
+  Future<void> signUpWithEmail({
+    required String email,
+    required String code,
+    required String password,
+    required bool ageConfirmedOver18,
+  }) => _completeSignIn(
+    () => ref
+        .read(authServiceProvider)
+        .signUpWithEmail(
+          email: email,
+          code: code,
+          password: password,
+          ageConfirmedOver18: ageConfirmedOver18,
+        ),
+  );
+
+  Future<void> loginWithEmail({
+    required String email,
+    required String password,
+  }) => _completeSignIn(
+    () => ref
+        .read(authServiceProvider)
+        .loginWithEmail(email: email, password: password),
+  );
+
+  /// Shared tail for every account-creation/sign-in path (ADR-014) — sets
+  /// [AsyncLoading], calls [signIn], saves the resulting session, fetches
+  /// the profile, and re-throws on failure so the caller (whichever
+  /// onboarding/login screen triggered this) can show the specific mapped
+  /// error message; state still reflects the failure for anything else
+  /// watching this provider.
+  Future<void> _completeSignIn(Future<AuthSession> Function() signIn) async {
     state = const AsyncLoading();
     try {
-      final session = await ref.read(authServiceProvider).signInWithLinkedIn();
+      final session = await signIn();
       await ref.read(sessionStorageProvider).saveSession(session);
       state = AsyncData(
         AuthSessionState(
@@ -131,13 +219,20 @@ class AuthSessionNotifier extends AsyncNotifier<AuthSessionState> {
         ),
       );
     } catch (error, stackTrace) {
-      // Re-thrown (unlike AsyncValue.guard, which would swallow it) so the
-      // caller — OnboardingFlow — can show the specific mapped error
-      // message; state still reflects the failure for anything else
-      // watching this provider.
       state = AsyncError(error, stackTrace);
       rethrow;
     }
+  }
+
+  /// Profile-initiated "Connect LinkedIn" (ADR-014) — links LinkedIn to the
+  /// CALLER's already-authenticated account rather than creating/resolving
+  /// one, so this reuses [completeVerification]'s save-and-refresh
+  /// semantics (the same shape every Level 2/3 verification-completing call
+  /// already uses) rather than [_completeSignIn], which is for the
+  /// four account-creation paths specifically.
+  Future<void> linkLinkedIn() async {
+    final session = await ref.read(authServiceProvider).linkLinkedIn();
+    await completeVerification(session);
   }
 
   /// Called after any verification-completing [AuthService] call succeeds

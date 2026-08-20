@@ -5,6 +5,7 @@ import 'package:professional_connections_platform/core/utils/snacks.dart';
 import 'package:professional_connections_platform/core/utils/toast.dart';
 import 'package:professional_connections_platform/core/widgets/app_icon.dart';
 import 'package:professional_connections_platform/core/widgets/professional_avatar.dart';
+import 'package:professional_connections_platform/features/meetups/my_meetups_page.dart';
 
 class HomeHeader extends StatelessWidget {
   const HomeHeader({super.key, required this.userName, this.imageUrl});
@@ -46,6 +47,12 @@ class HomeHeader extends StatelessWidget {
               ],
             ),
           ),
+          _MyMeetupsButton(
+            onTap: () => Navigator.of(
+              context,
+            ).push(MaterialPageRoute(builder: (_) => const MyMeetupsPage())),
+          ),
+          const SizedBox(width: 4),
           _NotificationBell(
             onTap: () => showSnack(
               context,
@@ -65,6 +72,27 @@ class HomeHeader extends StatelessWidget {
     if (hour < 12) return 'Good morning,';
     if (hour < 17) return 'Good afternoon,';
     return 'Good evening,';
+  }
+}
+
+class _MyMeetupsButton extends StatelessWidget {
+  const _MyMeetupsButton({required this.onTap});
+
+  final VoidCallback onTap;
+
+  @override
+  Widget build(BuildContext context) {
+    return GestureDetector(
+      onTap: onTap,
+      child: const Padding(
+        padding: EdgeInsets.all(8.0),
+        child: Icon(
+          Icons.event_available_outlined,
+          size: 24,
+          color: AppPalette.textPrimary,
+        ),
+      ),
+    );
   }
 }
 

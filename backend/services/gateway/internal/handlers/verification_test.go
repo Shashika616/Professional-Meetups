@@ -70,7 +70,7 @@ func TestVerificationRoutesRequireAuth(t *testing.T) {
 
 	for _, rt := range routes {
 		t.Run(rt.path, func(t *testing.T) {
-			h := New(newNeverCalledAuthClient(), verifier)
+			h := New(newNeverCalledAuthClient(), newNeverCalledMeetupClient(), verifier)
 			mux := http.NewServeMux()
 			h.Register(mux)
 
@@ -104,7 +104,7 @@ func TestGetProfile(t *testing.T) {
 				}, nil
 			},
 		}
-		h := New(fake, verifier)
+		h := New(fake, newNeverCalledMeetupClient(), verifier)
 		mux := http.NewServeMux()
 		h.Register(mux)
 
@@ -143,7 +143,7 @@ func TestStartPhoneVerification_ResendCooldownMapsTo429(t *testing.T) {
 			return 0, status.Error(codes.ResourceExhausted, "please wait before requesting another code")
 		},
 	}
-	h := New(fake, verifier)
+	h := New(fake, newNeverCalledMeetupClient(), verifier)
 	mux := http.NewServeMux()
 	h.Register(mux)
 
@@ -164,7 +164,7 @@ func TestStartCorporateEmailVerification_DomainRejectionMapsTo400(t *testing.T) 
 			return 0, status.Error(codes.InvalidArgument, "please use your work email, not a personal address")
 		},
 	}
-	h := New(fake, verifier)
+	h := New(fake, newNeverCalledMeetupClient(), verifier)
 	mux := http.NewServeMux()
 	h.Register(mux)
 

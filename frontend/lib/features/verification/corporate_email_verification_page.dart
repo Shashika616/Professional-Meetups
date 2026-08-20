@@ -4,8 +4,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:professional_connections_platform/core/providers/app_providers.dart';
 import 'package:professional_connections_platform/core/services/auth_service.dart';
 import 'package:professional_connections_platform/core/theme/app_palette.dart';
-import 'package:professional_connections_platform/core/utils/snacks.dart';
-import 'package:professional_connections_platform/core/utils/toast.dart';
 import 'package:professional_connections_platform/core/widgets/glass_text_field.dart';
 import 'package:professional_connections_platform/core/widgets/gradient_button.dart';
 import 'package:professional_connections_platform/features/verification/widgets/otp_entry.dart';
@@ -40,8 +38,7 @@ class CorporateEmailVerificationPage extends ConsumerStatefulWidget {
 class _CorporateEmailVerificationPageState
     extends ConsumerState<CorporateEmailVerificationPage> {
   final _emailController = TextEditingController();
-  bool _sending = false;
-  int? _resendAfterSeconds;
+  bool _showOtpEntry = false;
 
   @override
   void initState() {
@@ -62,43 +59,44 @@ class _CorporateEmailVerificationPageState
 
   /// Client-side hint only — mirrors the backend's free-domain list
   /// (Verification Model § 5) but never blocks submission; the backend
-  /// remains the actual enforcement point.
+  /// remains the actual enforcement point. A server-side rejection
+  /// (`WorkEmailDomainRejectedException`) still surfaces clearly — inline
+  /// on the OTP screen via [OtpEntry]'s own error handling, since sending
+  /// is now optimistic (see [_showOtp]) rather than gated on this call
+  /// succeeding first.
   bool get _looksLikeFreeEmail {
     final parts = _email.split('@');
     if (parts.length != 2) return false;
     return _freeEmailDomains.contains(parts[1].toLowerCase());
   }
 
-  Future<void> _sendCode() async {
-    if (_sending || _email.isEmpty) return;
-    setState(() => _sending = true);
+  // Optimistic transition (UX improvement) — flips to the OTP entry screen
+  // immediately, instead of waiting on the network call first; OtpEntry
+  // sends the code itself once mounted, via [_startVerification], and
+  // shows its own optimistic countdown/loading/error state for that — see
+  // OtpEntry's own doc comment for why a slow or failing backend no longer
+  // stalls this screen.
+  void _showOtp() {
+    if (_showOtpEntry || _email.isEmpty) return;
+    setState(() => _showOtpEntry = true);
+  }
+
+  Future<int> _startVerification() async {
     try {
-      final resendAfterSeconds = await ref
+      return await ref
           .read(authServiceProvider)
           .startCorporateEmailVerification(_email);
-      if (!mounted) return;
-      setState(() => _resendAfterSeconds = resendAfterSeconds);
-      showSnack(context, 'We sent a code to $_email', type: ToastType.success);
     } on SessionExpiredException {
-      // No local error shown — AppShell's listener navigates to LandingPage
-      // and shows the "session expired" message itself.
+      // No local error shown here — AppShell's listener navigates to
+      // LandingPage and shows the "session expired" message itself;
+      // rethrown so OtpEntry's own catch doesn't also surface a redundant
+      // generic message.
       if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
-    } catch (error) {
-      // Includes WorkEmailDomainRejectedException — its .message is
-      // already the backend's specific rejection text, shown verbatim
-      // here rather than a generic failure (self-review checklist).
-      if (mounted) {
-        showSnack(
-          context,
-          error is AuthException
-              ? error.message
-              : 'Something went wrong. Please try again.',
-          type: ToastType.error,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
+      rethrow;
     }
+    // Includes WorkEmailDomainRejectedException on a genuine rejection —
+    // its .message is already the backend's specific rejection text,
+    // shown verbatim by OtpEntry's error handling (self-review checklist).
   }
 
   Future<void> _verify(String code) async {
@@ -119,17 +117,6 @@ class _CorporateEmailVerificationPageState
     }
   }
 
-  Future<int> _resend() async {
-    try {
-      return await ref
-          .read(authServiceProvider)
-          .startCorporateEmailVerification(_email);
-    } on SessionExpiredException {
-      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
-      rethrow;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return VerificationScaffold(
@@ -139,7 +126,7 @@ class _CorporateEmailVerificationPageState
           'Verifying a work email is the strongest trust signal short of '
           'KYC — it unlocks a verified badge other members can see.',
       onSkip: () => Navigator.pop(context),
-      child: _resendAfterSeconds == null
+      child: !_showOtpEntry
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -163,16 +150,11 @@ class _CorporateEmailVerificationPageState
                 const SizedBox(height: 16),
                 GradientButton(
                   label: 'SEND CODE',
-                  isLoading: _sending,
-                  onPressed: _email.isNotEmpty ? _sendCode : null,
+                  onPressed: _email.isNotEmpty ? _showOtp : null,
                 ),
               ],
             )
-          : OtpEntry(
-              initialResendAfterSeconds: _resendAfterSeconds!,
-              onSubmit: _verify,
-              onResend: _resend,
-            ),
+          : OtpEntry(onSend: _startVerification, onSubmit: _verify),
     );
   }
 }

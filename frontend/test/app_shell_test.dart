@@ -8,8 +8,11 @@ import 'package:professional_connections_platform/core/models/auth_session.dart'
 import 'package:professional_connections_platform/core/models/user_profile.dart';
 import 'package:professional_connections_platform/core/providers/app_providers.dart';
 import 'package:professional_connections_platform/core/services/auth_service.dart';
+import 'package:professional_connections_platform/core/widgets/glass_bottom_bar.dart';
 import 'package:professional_connections_platform/features/landing/landing_page.dart';
+import 'package:professional_connections_platform/features/matches/matches_page.dart';
 
+import 'support/fake_meetup_service.dart';
 import 'support/fake_secure_storage_platform.dart';
 
 /// AppShell's HomePage tab (like LandingPage's OrbitingIntents elsewhere in
@@ -33,7 +36,40 @@ class _FakeAuthService implements AuthService {
       const UserProfile(id: 'user-1', fullName: 'Ada Lovelace');
 
   @override
-  Future<AuthSession> signInWithLinkedIn() async => throw UnimplementedError();
+  Future<AuthSession> signInWithLinkedIn({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signInWithApple({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signInWithGoogle({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signUpWithEmail({
+    required String email,
+    required String code,
+    required String password,
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> loginWithEmail({
+    required String email,
+    required String password,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> linkLinkedIn() async => throw UnimplementedError();
+
+  @override
+  Future<int> startEmailSignupOtp(String email) async =>
+      throw UnimplementedError();
 
   @override
   Future<AuthSession> refreshSession(String refreshToken) async =>
@@ -118,6 +154,18 @@ void main() {
         overrides: [
           authSessionProvider.overrideWith(_FakeLoggedInNotifier.new),
           authServiceProvider.overrideWithValue(_FakeAuthService()),
+          // HomePage's UpcomingMeetupCard reads myMeetupsProvider (backed
+          // by this) — without an override it defaults to the real
+          // HttpMeetupService and attempts a live network call.
+          meetupServiceProvider.overrideWithValue(ImmediateMeetupService()),
+          // NetworkInsightsRow's homeStatsProvider has its own real 1s
+          // Future.delayed — pumpAndSettle/_pumpUntil don't reliably
+          // advance fake time far enough to flush a bare unscheduled
+          // Timer nothing else keeps re-triggering, leaking a pending
+          // timer past test teardown.
+          homeStatsProvider.overrideWith(
+            (ref) async => const {'nearby': 0, 'meetups': 0, 'trustScore': 0.0},
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -172,6 +220,18 @@ void main() {
         overrides: [
           authSessionProvider.overrideWith(_FakeLoggedInNotifier.new),
           authServiceProvider.overrideWithValue(_FakeAuthService()),
+          // HomePage's UpcomingMeetupCard reads myMeetupsProvider (backed
+          // by this) — without an override it defaults to the real
+          // HttpMeetupService and attempts a live network call.
+          meetupServiceProvider.overrideWithValue(ImmediateMeetupService()),
+          // NetworkInsightsRow's homeStatsProvider has its own real 1s
+          // Future.delayed — pumpAndSettle/_pumpUntil don't reliably
+          // advance fake time far enough to flush a bare unscheduled
+          // Timer nothing else keeps re-triggering, leaking a pending
+          // timer past test teardown.
+          homeStatsProvider.overrideWith(
+            (ref) async => const {'nearby': 0, 'meetups': 0, 'trustScore': 0.0},
+          ),
         ],
       );
       addTearDown(container.dispose);
@@ -212,4 +272,67 @@ void main() {
       expect(find.byType(LandingPage), findsNothing);
     },
   );
+
+  testWidgets('swiping the PageView switches tabs and keeps the bottom nav bar '
+      'highlight in sync — previously the only way to switch tabs was '
+      'tapping the bar itself', (tester) async {
+    final container = ProviderContainer(
+      overrides: [
+        authSessionProvider.overrideWith(_FakeLoggedInNotifier.new),
+        authServiceProvider.overrideWithValue(_FakeAuthService()),
+        meetupServiceProvider.overrideWithValue(ImmediateMeetupService()),
+        homeStatsProvider.overrideWith(
+          (ref) async => const {'nearby': 0, 'meetups': 0, 'trustScore': 0.0},
+        ),
+      ],
+    );
+    addTearDown(container.dispose);
+
+    await tester.pumpWidget(
+      UncontrolledProviderScope(
+        container: container,
+        child: const MaterialApp(home: AppShell()),
+      ),
+    );
+    await _pumpUntil(tester, () => find.byType(AppShell).evaluate().isNotEmpty);
+
+    expect(container.read(currentTabIndexProvider), 0);
+    expect(tester.widget<GlassBottomBar>(find.byType(GlassBottomBar)).index, 0);
+
+    // A leftward fling on the PageView is a forward swipe (Home →
+    // Matches) — fling rather than drag, so the gesture carries enough
+    // velocity for PageView to actually commit to the next page rather
+    // than snapping back to the one it started on.
+    await tester.fling(find.byType(PageView), const Offset(-400, 0), 1000);
+    await tester.pump();
+    await _pumpUntil(
+      tester,
+      () => container.read(currentTabIndexProvider) == 1,
+    );
+
+    expect(container.read(currentTabIndexProvider), 1);
+    expect(
+      tester.widget<GlassBottomBar>(find.byType(GlassBottomBar)).index,
+      1,
+      reason:
+          'the bar must highlight Matches after a swipe, not just '
+          'after a tap on the bar itself',
+    );
+    expect(find.byType(MatchesPage), findsOneWidget);
+
+    // Tapping the bar still works too, and animates the PageView back —
+    // both paths drive the same provider rather than two sources of
+    // truth that could drift apart. A deterministic pump through the
+    // known 280ms animateToPage duration (app_shell.dart) rather than
+    // _pumpUntil here: HomePage's perpetual animation means polling past
+    // the point the tap's own effect has already landed can't be
+    // distinguished from "still animating," so it isn't a reliable
+    // termination condition on the way back to it.
+    await tester.tap(find.text('HOME'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 350));
+
+    expect(container.read(currentTabIndexProvider), 0);
+    expect(tester.widget<GlassBottomBar>(find.byType(GlassBottomBar)).index, 0);
+  });
 }

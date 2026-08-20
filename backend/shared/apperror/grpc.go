@@ -47,6 +47,8 @@ func grpcCode(err error) codes.Code {
 		return codes.InvalidArgument
 	case errors.Is(err, ErrUnauthorized):
 		return codes.Unauthenticated
+	case errors.Is(err, ErrForbidden):
+		return codes.PermissionDenied
 	case errors.Is(err, ErrConflict):
 		return codes.AlreadyExists
 	case errors.Is(err, ErrRateLimited):

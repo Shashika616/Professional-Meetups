@@ -11,7 +11,57 @@ import 'package:professional_connections_platform/core/models/user_profile.dart'
 /// a token refresh already does, rather than waiting for the next natural
 /// refresh.
 abstract interface class AuthService {
-  Future<AuthSession> signInWithLinkedIn();
+  /// Direct LinkedIn signup — unchanged in name/behavior from ADR-011,
+  /// still a resolve-or-create call that grants Level 1 immediately
+  /// (ADR-014 §1: LinkedIn is the only path to Level 1, whether chosen at
+  /// signup or connected later via [linkLinkedIn]). Now also carries
+  /// `age_confirmed_over_18` — LinkedIn direct signup didn't have an age
+  /// gate before ADR-014 and needed one, same as the other three paths.
+  Future<AuthSession> signInWithLinkedIn({required bool ageConfirmedOver18});
+
+  /// Sign in with Apple (iOS) — creates a permanently-zero-trust Level 0
+  /// account, or logs in if this Apple identity already has one (ADR-014).
+  Future<AuthSession> signInWithApple({required bool ageConfirmedOver18});
+
+  /// Google Sign-In (Android) — same Level 0 semantics as
+  /// [signInWithApple], different provider.
+  Future<AuthSession> signInWithGoogle({required bool ageConfirmedOver18});
+
+  /// Completes email+password signup after [startEmailSignupOtp]'s code has
+  /// been entered — creates a new Level 0 account, or (per
+  /// `SignUpOrRecoverWithEmail`'s server-side recovery semantics) sets a
+  /// password on an existing account whose `personal_email` this address
+  /// already verified elsewhere.
+  Future<AuthSession> signUpWithEmail({
+    required String email,
+    required String code,
+    required String password,
+    required bool ageConfirmedOver18,
+  });
+
+  /// Email+password sign-in for a returning user — the one path that can't
+  /// collapse "resolve or create" into a single tap the way the federated
+  /// methods do, so it needs its own form/screen.
+  Future<AuthSession> loginWithEmail({
+    required String email,
+    required String password,
+  });
+
+  /// Links LinkedIn to the CALLER's already-authenticated account
+  /// (Profile's "Connect LinkedIn," ADR-014) — distinct from
+  /// [signInWithLinkedIn], which creates/resolves an account rather than
+  /// linking to one already signed in. Hits a different backend route
+  /// (`/v1/auth/identities/link`, authenticated) than [signInWithLinkedIn]
+  /// (`/v1/auth/linkedin/callback`, unauthenticated).
+  Future<AuthSession> linkLinkedIn();
+
+  /// Sends the OTP [startEmailSignupOtp] to `email`'s inbox, as the first
+  /// step of [signUpWithEmail] — reuses the same OTP-start pattern already
+  /// built for personal-email verification (`StartVerificationRequest`
+  /// shape), just unauthenticated. Returns the server's resend cooldown, in
+  /// seconds, same convention as [startPhoneVerification] etc.
+  Future<int> startEmailSignupOtp(String email);
+
   Future<AuthSession> refreshSession(String refreshToken);
   Future<void> logout(String refreshToken);
 
@@ -66,6 +116,17 @@ class SessionExpiredException extends AuthException {
   const SessionExpiredException(super.message);
 }
 
+/// 401 from `POST /v1/auth/email/login` — the email doesn't exist, has no
+/// password set (a federated/LinkedIn-only account never used this path),
+/// or the password is wrong. The backend deliberately returns the exact
+/// same message for all three cases (`LoginWithPassword`'s own
+/// account-enumeration-safe design) — distinct from [SessionExpiredException]
+/// because there is no prior session to have expired here, just a fresh
+/// sign-in attempt that failed.
+class InvalidCredentialsException extends AuthException {
+  const InvalidCredentialsException(super.message);
+}
+
 /// The user backed out of the LinkedIn browser flow, or it never completed
 /// within the timeout — not a server error, nothing to retry against.
 class SignInCancelledException extends AuthException {
@@ -116,7 +177,9 @@ class MockAuthService implements AuthService {
   static const Duration latency = Duration(milliseconds: 600);
 
   @override
-  Future<AuthSession> signInWithLinkedIn() async {
+  Future<AuthSession> signInWithLinkedIn({
+    required bool ageConfirmedOver18,
+  }) async {
     await Future<void>.delayed(latency);
     return AuthSession(
       userId: 'mock-user-1',
@@ -128,6 +191,99 @@ class MockAuthService implements AuthService {
       fullName: 'Mock User',
       profilePhotoUrl: '',
     );
+  }
+
+  @override
+  Future<AuthSession> signInWithApple({
+    required bool ageConfirmedOver18,
+  }) async {
+    await Future<void>.delayed(latency);
+    return AuthSession(
+      userId: 'mock-user-1',
+      accessToken: 'mock-access-token',
+      refreshToken: 'mock-refresh-token',
+      trustLevel: 0,
+      isNewUser: true,
+      accessTokenExpiresAt: DateTime.now().add(const Duration(minutes: 15)),
+      fullName: 'Mock User',
+      profilePhotoUrl: '',
+    );
+  }
+
+  @override
+  Future<AuthSession> signInWithGoogle({
+    required bool ageConfirmedOver18,
+  }) async {
+    await Future<void>.delayed(latency);
+    return AuthSession(
+      userId: 'mock-user-1',
+      accessToken: 'mock-access-token',
+      refreshToken: 'mock-refresh-token',
+      trustLevel: 0,
+      isNewUser: true,
+      accessTokenExpiresAt: DateTime.now().add(const Duration(minutes: 15)),
+      fullName: 'Mock User',
+      profilePhotoUrl: '',
+    );
+  }
+
+  @override
+  Future<AuthSession> signUpWithEmail({
+    required String email,
+    required String code,
+    required String password,
+    required bool ageConfirmedOver18,
+  }) async {
+    await Future<void>.delayed(latency);
+    return AuthSession(
+      userId: 'mock-user-1',
+      accessToken: 'mock-access-token',
+      refreshToken: 'mock-refresh-token',
+      trustLevel: 0,
+      isNewUser: true,
+      accessTokenExpiresAt: DateTime.now().add(const Duration(minutes: 15)),
+      fullName: 'Mock User',
+      profilePhotoUrl: '',
+    );
+  }
+
+  @override
+  Future<AuthSession> loginWithEmail({
+    required String email,
+    required String password,
+  }) async {
+    await Future<void>.delayed(latency);
+    return AuthSession(
+      userId: 'mock-user-1',
+      accessToken: 'mock-access-token',
+      refreshToken: 'mock-refresh-token',
+      trustLevel: 0,
+      isNewUser: false,
+      accessTokenExpiresAt: DateTime.now().add(const Duration(minutes: 15)),
+      fullName: 'Mock User',
+      profilePhotoUrl: '',
+    );
+  }
+
+  @override
+  Future<AuthSession> linkLinkedIn() async {
+    await Future<void>.delayed(latency);
+    return AuthSession(
+      userId: 'mock-user-1',
+      accessToken: 'mock-access-token-linked',
+      refreshToken: 'mock-refresh-token-linked',
+      trustLevel: 1,
+      isNewUser: false,
+      accessTokenExpiresAt: DateTime.now().add(const Duration(minutes: 15)),
+      fullName: 'Mock User',
+      profilePhotoUrl: '',
+    );
+  }
+
+  @override
+  Future<int> startEmailSignupOtp(String email) async {
+    await Future<void>.delayed(latency);
+    return 60;
   }
 
   @override
@@ -201,6 +357,14 @@ class MockAuthService implements AuthService {
   @override
   Future<UserProfile> getProfile() async {
     await Future<void>.delayed(latency);
-    return const UserProfile(id: 'mock-user-1', fullName: 'Mock User');
+    // trustLevel pinned explicitly (not left to UserProfile's own default)
+    // so this mock's contract stays stable regardless of what that default
+    // is — this mock has always represented a LinkedIn-connected user,
+    // matching signInWithLinkedIn()'s own trustLevel: 1 above.
+    return const UserProfile(
+      id: 'mock-user-1',
+      fullName: 'Mock User',
+      trustLevel: 1,
+    );
   }
 }

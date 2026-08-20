@@ -7,6 +7,9 @@ import 'package:professional_connections_platform/core/providers/app_providers.d
 import 'package:professional_connections_platform/core/widgets/professional_avatar.dart';
 import 'package:professional_connections_platform/features/home/home_page.dart';
 import 'package:professional_connections_platform/features/home/widgets/home_header.dart';
+import 'package:professional_connections_platform/features/meetups/schedule_flow.dart';
+
+import 'support/fake_meetup_service.dart';
 
 /// Resolves immediately to a fixed [AuthSessionState] instead of reading
 /// secure storage — HomePage only ever reads `.profile` off this provider,
@@ -97,6 +100,22 @@ void main() {
                   const AuthSessionState(profile: profile),
                 ),
               ),
+              // UpcomingMeetupCard reads myMeetupsProvider (backed by this)
+              // — without an override it defaults to the real
+              // HttpMeetupService and attempts a live network call.
+              meetupServiceProvider.overrideWithValue(ImmediateMeetupService()),
+              // NetworkInsightsRow's homeStatsProvider has its own
+              // real 1s Future.delayed — pumpAndSettle doesn't reliably
+              // advance fake time far enough to flush a bare unscheduled
+              // Timer that nothing else keeps re-triggering, so left
+              // un-overridden it leaks a pending timer past test teardown.
+              homeStatsProvider.overrideWith(
+                (ref) async => const {
+                  'nearby': 0,
+                  'meetups': 0,
+                  'trustScore': 0.0,
+                },
+              ),
             ],
             child: const MaterialApp(home: HomePage()),
           ),
@@ -120,6 +139,14 @@ void main() {
             authSessionProvider.overrideWith(
               () => _FakeAuthSessionNotifier(const AuthSessionState()),
             ),
+            meetupServiceProvider.overrideWithValue(ImmediateMeetupService()),
+            homeStatsProvider.overrideWith(
+              (ref) async => const {
+                'nearby': 0,
+                'meetups': 0,
+                'trustScore': 0.0,
+              },
+            ),
           ],
           child: const MaterialApp(home: HomePage()),
         ),
@@ -129,5 +156,38 @@ void main() {
       expect(find.text('Member'), findsOneWidget);
       expect(find.text('Shashika Fernando'), findsNothing);
     });
+
+    testWidgets(
+      'HOST YOUR OWN MEETUP opens ScheduleFlowPage directly — hosting used '
+      'to be reachable only via a "+" icon on the browse/Matches page, '
+      'which this button replaces as the primary entry point',
+      (tester) async {
+        await tester.pumpWidget(
+          ProviderScope(
+            overrides: [
+              authSessionProvider.overrideWith(
+                () => _FakeAuthSessionNotifier(const AuthSessionState()),
+              ),
+              meetupServiceProvider.overrideWithValue(ImmediateMeetupService()),
+              homeStatsProvider.overrideWith(
+                (ref) async => const {
+                  'nearby': 0,
+                  'meetups': 0,
+                  'trustScore': 0.0,
+                },
+              ),
+            ],
+            child: const MaterialApp(home: HomePage()),
+          ),
+        );
+        await tester.pumpAndSettle();
+
+        expect(find.text('HOST YOUR OWN MEETUP'), findsOneWidget);
+        await tester.tap(find.text('HOST YOUR OWN MEETUP'));
+        await tester.pumpAndSettle();
+
+        expect(find.byType(ScheduleFlowPage), findsOneWidget);
+      },
+    );
   });
 }

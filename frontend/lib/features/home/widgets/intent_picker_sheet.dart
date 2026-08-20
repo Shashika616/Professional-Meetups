@@ -78,9 +78,12 @@ class IntentPickerSheet extends ConsumerWidget {
                       locked: !intent.isUnlockedFor(trustLevel),
                       onTap: () {
                         if (!intent.isUnlockedFor(trustLevel)) {
+                          // Non-punitive: names the specific unlock path
+                          // (Profile's verification rows, ADR-013 § 2)
+                          // rather than a bare "locked" dead end.
                           showSnack(
                             context,
-                            '${intent.label} requires Level ${intent.requiredTrustLevel} trust.',
+                            '${intent.label} requires Level ${intent.requiredTrustLevel} trust. Verify your phone, personal email, and details in Profile to unlock it.',
                             type: ToastType.locked,
                           );
                           return;

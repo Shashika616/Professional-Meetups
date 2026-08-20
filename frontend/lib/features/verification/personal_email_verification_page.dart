@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:professional_connections_platform/core/providers/app_providers.dart';
 import 'package:professional_connections_platform/core/services/auth_service.dart';
-import 'package:professional_connections_platform/core/utils/snacks.dart';
-import 'package:professional_connections_platform/core/utils/toast.dart';
 import 'package:professional_connections_platform/core/widgets/glass_text_field.dart';
 import 'package:professional_connections_platform/core/widgets/gradient_button.dart';
 import 'package:professional_connections_platform/features/verification/widgets/otp_entry.dart';
@@ -24,8 +22,7 @@ class PersonalEmailVerificationPage extends ConsumerStatefulWidget {
 class _PersonalEmailVerificationPageState
     extends ConsumerState<PersonalEmailVerificationPage> {
   final _emailController = TextEditingController();
-  bool _sending = false;
-  int? _resendAfterSeconds;
+  bool _showOtpEntry = false;
 
   @override
   void initState() {
@@ -46,32 +43,29 @@ class _PersonalEmailVerificationPageState
 
   String get _email => _emailController.text.trim();
 
-  Future<void> _sendCode() async {
-    if (_sending || _email.isEmpty) return;
-    setState(() => _sending = true);
+  // Optimistic transition (UX improvement) — flips to the OTP entry screen
+  // immediately, instead of waiting on the network call first; OtpEntry
+  // sends the code itself once mounted, via [_startVerification], and
+  // shows its own optimistic countdown/loading/error state for that — see
+  // OtpEntry's own doc comment for why a slow or failing backend no longer
+  // stalls this screen.
+  void _showOtp() {
+    if (_showOtpEntry || _email.isEmpty) return;
+    setState(() => _showOtpEntry = true);
+  }
+
+  Future<int> _startVerification() async {
     try {
-      final resendAfterSeconds = await ref
+      return await ref
           .read(authServiceProvider)
           .startPersonalEmailVerification(_email);
-      if (!mounted) return;
-      setState(() => _resendAfterSeconds = resendAfterSeconds);
-      showSnack(context, 'We sent a code to $_email', type: ToastType.success);
     } on SessionExpiredException {
-      // No local error shown — AppShell's listener navigates to LandingPage
-      // and shows the "session expired" message itself.
+      // No local error shown here — AppShell's listener navigates to
+      // LandingPage and shows the "session expired" message itself;
+      // rethrown so OtpEntry's own catch doesn't also surface a redundant
+      // generic message.
       if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
-    } catch (error) {
-      if (mounted) {
-        showSnack(
-          context,
-          error is AuthException
-              ? error.message
-              : 'Something went wrong. Please try again.',
-          type: ToastType.error,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
+      rethrow;
     }
   }
 
@@ -93,17 +87,6 @@ class _PersonalEmailVerificationPageState
     }
   }
 
-  Future<int> _resend() async {
-    try {
-      return await ref
-          .read(authServiceProvider)
-          .startPersonalEmailVerification(_email);
-    } on SessionExpiredException {
-      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
-      rethrow;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return VerificationScaffold(
@@ -113,7 +96,7 @@ class _PersonalEmailVerificationPageState
           'A verified personal email gives you an account-recovery path '
           'that doesn\'t depend on LinkedIn or your phone.',
       onSkip: () => Navigator.pop(context),
-      child: _resendAfterSeconds == null
+      child: !_showOtpEntry
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -126,16 +109,11 @@ class _PersonalEmailVerificationPageState
                 const SizedBox(height: 16),
                 GradientButton(
                   label: 'SEND CODE',
-                  isLoading: _sending,
-                  onPressed: _email.isNotEmpty ? _sendCode : null,
+                  onPressed: _email.isNotEmpty ? _showOtp : null,
                 ),
               ],
             )
-          : OtpEntry(
-              initialResendAfterSeconds: _resendAfterSeconds!,
-              onSubmit: _verify,
-              onResend: _resend,
-            ),
+          : OtpEntry(onSend: _startVerification, onSubmit: _verify),
     );
   }
 }

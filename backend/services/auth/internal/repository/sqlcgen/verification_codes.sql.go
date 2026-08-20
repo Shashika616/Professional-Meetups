@@ -8,7 +8,6 @@ package sqlcgen
 import (
 	"context"
 
-	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgtype"
 )
 
@@ -17,7 +16,7 @@ DELETE FROM verification_codes WHERE user_id = $1 AND purpose = $2
 `
 
 type DeleteVerificationCodeParams struct {
-	UserID  uuid.UUID           `json:"user_id"`
+	UserID  pgtype.UUID         `json:"user_id"`
 	Purpose VerificationPurpose `json:"purpose"`
 }
 
@@ -26,17 +25,56 @@ func (q *Queries) DeleteVerificationCode(ctx context.Context, arg DeleteVerifica
 	return err
 }
 
+const deleteVerificationCodeByTarget = `-- name: DeleteVerificationCodeByTarget :exec
+DELETE FROM verification_codes WHERE user_id IS NULL AND purpose = $1 AND target = $2
+`
+
+type DeleteVerificationCodeByTargetParams struct {
+	Purpose VerificationPurpose `json:"purpose"`
+	Target  string              `json:"target"`
+}
+
+func (q *Queries) DeleteVerificationCodeByTarget(ctx context.Context, arg DeleteVerificationCodeByTargetParams) error {
+	_, err := q.db.Exec(ctx, deleteVerificationCodeByTarget, arg.Purpose, arg.Target)
+	return err
+}
+
 const getVerificationCode = `-- name: GetVerificationCode :one
 SELECT id, user_id, purpose, target, code_hash, attempts, expires_at, created_at FROM verification_codes WHERE user_id = $1 AND purpose = $2
 `
 
 type GetVerificationCodeParams struct {
-	UserID  uuid.UUID           `json:"user_id"`
+	UserID  pgtype.UUID         `json:"user_id"`
 	Purpose VerificationPurpose `json:"purpose"`
 }
 
 func (q *Queries) GetVerificationCode(ctx context.Context, arg GetVerificationCodeParams) (VerificationCode, error) {
 	row := q.db.QueryRow(ctx, getVerificationCode, arg.UserID, arg.Purpose)
+	var i VerificationCode
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Purpose,
+		&i.Target,
+		&i.CodeHash,
+		&i.Attempts,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const getVerificationCodeByTarget = `-- name: GetVerificationCodeByTarget :one
+SELECT id, user_id, purpose, target, code_hash, attempts, expires_at, created_at FROM verification_codes WHERE user_id IS NULL AND purpose = $1 AND target = $2
+`
+
+type GetVerificationCodeByTargetParams struct {
+	Purpose VerificationPurpose `json:"purpose"`
+	Target  string              `json:"target"`
+}
+
+func (q *Queries) GetVerificationCodeByTarget(ctx context.Context, arg GetVerificationCodeByTargetParams) (VerificationCode, error) {
+	row := q.db.QueryRow(ctx, getVerificationCodeByTarget, arg.Purpose, arg.Target)
 	var i VerificationCode
 	err := row.Scan(
 		&i.ID,
@@ -58,12 +96,39 @@ RETURNING id, user_id, purpose, target, code_hash, attempts, expires_at, created
 `
 
 type IncrementVerificationAttemptsParams struct {
-	UserID  uuid.UUID           `json:"user_id"`
+	UserID  pgtype.UUID         `json:"user_id"`
 	Purpose VerificationPurpose `json:"purpose"`
 }
 
 func (q *Queries) IncrementVerificationAttempts(ctx context.Context, arg IncrementVerificationAttemptsParams) (VerificationCode, error) {
 	row := q.db.QueryRow(ctx, incrementVerificationAttempts, arg.UserID, arg.Purpose)
+	var i VerificationCode
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Purpose,
+		&i.Target,
+		&i.CodeHash,
+		&i.Attempts,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const incrementVerificationAttemptsByTarget = `-- name: IncrementVerificationAttemptsByTarget :one
+UPDATE verification_codes SET attempts = attempts + 1
+WHERE user_id IS NULL AND purpose = $1 AND target = $2
+RETURNING id, user_id, purpose, target, code_hash, attempts, expires_at, created_at
+`
+
+type IncrementVerificationAttemptsByTargetParams struct {
+	Purpose VerificationPurpose `json:"purpose"`
+	Target  string              `json:"target"`
+}
+
+func (q *Queries) IncrementVerificationAttemptsByTarget(ctx context.Context, arg IncrementVerificationAttemptsByTargetParams) (VerificationCode, error) {
+	row := q.db.QueryRow(ctx, incrementVerificationAttemptsByTarget, arg.Purpose, arg.Target)
 	var i VerificationCode
 	err := row.Scan(
 		&i.ID,
@@ -87,7 +152,7 @@ RETURNING id, user_id, purpose, target, code_hash, attempts, expires_at, created
 `
 
 type UpsertVerificationCodeParams struct {
-	UserID    uuid.UUID           `json:"user_id"`
+	UserID    pgtype.UUID         `json:"user_id"`
 	Purpose   VerificationPurpose `json:"purpose"`
 	Target    string              `json:"target"`
 	CodeHash  string              `json:"code_hash"`
@@ -100,6 +165,50 @@ type UpsertVerificationCodeParams struct {
 func (q *Queries) UpsertVerificationCode(ctx context.Context, arg UpsertVerificationCodeParams) (VerificationCode, error) {
 	row := q.db.QueryRow(ctx, upsertVerificationCode,
 		arg.UserID,
+		arg.Purpose,
+		arg.Target,
+		arg.CodeHash,
+		arg.ExpiresAt,
+	)
+	var i VerificationCode
+	err := row.Scan(
+		&i.ID,
+		&i.UserID,
+		&i.Purpose,
+		&i.Target,
+		&i.CodeHash,
+		&i.Attempts,
+		&i.ExpiresAt,
+		&i.CreatedAt,
+	)
+	return i, err
+}
+
+const upsertVerificationCodeForSignup = `-- name: UpsertVerificationCodeForSignup :one
+
+INSERT INTO verification_codes (user_id, purpose, target, code_hash, expires_at)
+VALUES (NULL, $1, $2, $3, $4)
+ON CONFLICT (purpose, target) WHERE user_id IS NULL
+DO UPDATE SET code_hash = $3, attempts = 0, expires_at = $4, created_at = now()
+RETURNING id, user_id, purpose, target, code_hash, attempts, expires_at, created_at
+`
+
+type UpsertVerificationCodeForSignupParams struct {
+	Purpose   VerificationPurpose `json:"purpose"`
+	Target    string              `json:"target"`
+	CodeHash  string              `json:"code_hash"`
+	ExpiresAt pgtype.Timestamptz  `json:"expires_at"`
+}
+
+// Email+password signup (ADR-014 decision #2, migration 0004) — the
+// account may not exist yet at OTP-send time (see
+// SignUpOrRecoverWithEmail's recovery path), so these four mirror the
+// four above exactly except keyed by (purpose, target) instead of
+// (user_id, purpose), via idx_verification_codes_signup_target. Used only
+// for VERIFICATION_PURPOSE_EMAIL_SIGNUP; user_id is always NULL on these
+// rows.
+func (q *Queries) UpsertVerificationCodeForSignup(ctx context.Context, arg UpsertVerificationCodeForSignupParams) (VerificationCode, error) {
+	row := q.db.QueryRow(ctx, upsertVerificationCodeForSignup,
 		arg.Purpose,
 		arg.Target,
 		arg.CodeHash,

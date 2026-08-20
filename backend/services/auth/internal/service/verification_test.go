@@ -40,17 +40,31 @@ func decodeUnverifiedTestClaims(token string) (sharedjwt.Claims, error) {
 }
 
 // newTestService wires a Service against fakes only — no LinkedIn/Postgres
-// dependency needed for the verification RPCs.
+// dependency needed for the verification RPCs. identities/apple/google are
+// unused by every test in this file (none of them touch federated
+// signup/linking directly), but New still needs something non-nil to
+// construct — see service_test.go's newFederatedTestService for the
+// richer helper federated-signup/link-identity tests use instead.
 func newTestService(t *testing.T) (*Service, *fakeUserRepository, *fakeVerificationCodeRepository, *fakeEmailSender, *fakeSmsSender) {
 	t.Helper()
 	users := newFakeUserRepository()
 	codes := newFakeVerificationCodeRepository()
 	emailSender := &fakeEmailSender{}
 	smsSender := &fakeSmsSender{}
-	svc := New(users, newFakeRefreshTokenRepository(), codes, nil, newTestSigner(t), &fakePublisher{}, emailSender, smsSender)
+	svc := New(
+		users, newFakeUserIdentityRepository(), newFakeRefreshTokenRepository(), codes,
+		nil, &fakeIdentityProvider{}, &fakeIdentityProvider{},
+		newTestSigner(t), &fakePublisher{}, emailSender, smsSender,
+	)
 	return svc, users, codes, emailSender, smsSender
 }
 
+// seedUser seeds a user who already has LinkedIn linked — the pre-ADR-014
+// default this file's tests assume throughout (every RPC here is a Level
+// 2/3 verification step, and ADR-014 §4 makes LinkedIn a hard prerequisite
+// for all of them — see requireLinkedIn in verification.go). Tests that
+// specifically need a Level 0 (no LinkedIn) user construct one directly
+// instead of calling this helper.
 func seedUser(t *testing.T, users *fakeUserRepository, id string) repository.User {
 	t.Helper()
 	users.byID[id] = repository.User{ID: id, LinkedInSub: "sub-" + id, FullName: "Test User", TrustLevel: 1, AccountStatus: repository.AccountStatusActive}
@@ -306,7 +320,7 @@ func TestSubmitPersonalDetails(t *testing.T) {
 
 	t.Run("persists and reflects in trust level once all 4 fields are set", func(t *testing.T) {
 		users.byID["user-1"] = repository.User{
-			ID: "user-1", PhoneNumber: "+94771234567", PersonalEmail: "a@example.com", TrustLevel: 1, AccountStatus: repository.AccountStatusActive,
+			ID: "user-1", LinkedInSub: "sub-user-1", PhoneNumber: "+94771234567", PersonalEmail: "a@example.com", TrustLevel: 1, AccountStatus: repository.AccountStatusActive,
 		}
 
 		session, err := svc.SubmitPersonalDetails(context.Background(), &authv1.SubmitPersonalDetailsRequest{
@@ -358,7 +372,9 @@ func TestGetProfile_NeverReturnsRawContactInfo(t *testing.T) {
 	// .proto definition, not runtime logic. This assertion documents that
 	// invariant so a future field addition to ProfileResponse can't
 	// silently reintroduce one without a test noticing the shape changed.
-	if profile.ProtoReflect().Descriptor().Fields().Len() != 9 {
-		t.Errorf("ProfileResponse field count = %d, want 9 — verify no raw contact field was added", profile.ProtoReflect().Descriptor().Fields().Len())
+	// 11, not 9, as of ADR-015: rating_average/rating_count are an
+	// aggregate score, not contact info, and were added deliberately.
+	if profile.ProtoReflect().Descriptor().Fields().Len() != 11 {
+		t.Errorf("ProfileResponse field count = %d, want 11 — verify no raw contact field was added", profile.ProtoReflect().Descriptor().Fields().Len())
 	}
 }

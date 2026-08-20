@@ -7,7 +7,7 @@ Per-intent and per-feature safety controls. Companion to [Trust & Safety Archite
 Each **Intent** (see [Domain Model](../02-domain/domain-model.md)) carries different risk and different required controls:
 
 - **Low-risk** (coffee, lunch, professional networking, mentorship, startup discussion, industry community): public-meeting recommendation, in-app chat only, mutual match required, basic verification.
-- **Medium-risk** (breakfast, after-work drinks, event meetup, community gathering): public-venue recommendation, optional check-in, higher trust score, user ratings.
+- **Medium-risk** (breakfast, after-work drinks, event meetup, community gathering): public-venue recommendation, optional check-in, higher trust score, [Domain Model](../02-domain/domain-model.md) ([ADR-015](../04-decisions/adr-015-post-meetup-star-ratings.md)).
 - **High-risk** (dating, ride sharing, late-night meetups, home/office pickup, private-location meetups): higher trust level, account-age requirement, optional ID verification, live location sharing, emergency button, meeting check-in, ride-specific vehicle verification, stronger moderation, two-way consent, possibly limited to users with prior positive meetup history.
 
 ## Ride-sharing safety
@@ -41,7 +41,7 @@ Criminals move victims to WhatsApp/Telegram/Signal/SMS/email to avoid detection.
 
 See [Safety UX Flows](../05-ux/safety-ux-flows.md) for the full step-by-step flow. Summary:
 
-- **Before meeting**: show first name only by default, verified badge, trust level, optionally-hidden company, approximate location, mutual communities, previous ratings, safety checklist. Recommend public daytime venues (cafe in hotel/office building, restaurant public area, co-working lobby, transit hub, office reception); discourage private homes, hotel rooms, remote locations, late-night first meetings, car pickups (unless ride-sharing verified).
+- **Before meeting**: show first name only by default, verified badge, trust level, optionally-hidden company, approximate location, mutual communities, [Domain Model](../02-domain/domain-model.md) ([ADR-015](../04-decisions/adr-015-post-meetup-star-ratings.md), anonymous-to-ratee aggregate only), safety checklist. Recommend public daytime venues (cafe in hotel/office building, restaurant public area, co-working lobby, transit hub, office reception); discourage private homes, hotel rooms, remote locations, late-night first meetings, car pickups (unless ride-sharing verified).
 - **During meeting**: optional check-in button, safety timer, live location to trusted contact, fake-incoming-call feature, quick-exit help, emergency SOS, "I am safe" / "I need help" buttons.
 - **After meeting**: ask both parties whether the meeting happened, whether they felt safe, whether the profile was accurate, whether they'd meet again, and whether they want to report. Feeds the trust score; detailed feedback is internal-only, never shown publicly.
 

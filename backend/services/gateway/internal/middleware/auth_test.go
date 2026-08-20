@@ -5,6 +5,7 @@ import (
 	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -63,6 +64,13 @@ func okHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusOK)
 		_, _ = w.Write([]byte(UserIDFromContext(r.Context())))
+	})
+}
+
+func trustLevelHandler() http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprintf(w, "%d", TrustLevelFromContext(r.Context()))
 	})
 }
 
@@ -145,6 +153,35 @@ func TestAuth_ValidTokenExtractsCorrectUserID(t *testing.T) {
 		// two distinct, correct user IDs — not a shared/stale value.
 		if got := rec.Body.String(); got != userID {
 			t.Errorf("extracted user_id = %q, want %q", got, userID)
+		}
+	}
+}
+
+func TestAuth_ValidTokenExtractsCorrectTrustLevel(t *testing.T) {
+	_, signer, verifier := testKeypair(t)
+	handler := Auth(verifier)(trustLevelHandler())
+
+	// 0 included deliberately (ADR-014): TrustLevelFromContext's own
+	// zero-value fallback for "no claim attached" is also 0, so an
+	// explicit trust_level: 0 claim needs its own case to prove it's
+	// actually carried through Auth, not just coincidentally matching
+	// that fallback.
+	for _, trustLevel := range []int{0, 1, 2, 4} {
+		token, err := signer.Sign(sharedjwt.Claims{UserID: "user-1", TrustLevel: trustLevel})
+		if err != nil {
+			t.Fatalf("sign: %v", err)
+		}
+
+		req := httptest.NewRequest(http.MethodGet, "/v1/meetups", nil)
+		req.Header.Set("Authorization", "Bearer "+token)
+		rec := httptest.NewRecorder()
+		handler.ServeHTTP(rec, req)
+
+		if rec.Code != http.StatusOK {
+			t.Fatalf("status = %d, want %d", rec.Code, http.StatusOK)
+		}
+		if got := rec.Body.String(); got != fmt.Sprintf("%d", trustLevel) {
+			t.Errorf("extracted trust_level = %q, want %q", got, fmt.Sprintf("%d", trustLevel))
 		}
 	}
 }

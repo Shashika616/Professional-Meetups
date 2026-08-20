@@ -13,16 +13,50 @@ import (
 
 type Querier interface {
 	CreateRefreshToken(ctx context.Context, arg CreateRefreshTokenParams) (RefreshToken, error)
+	// age_confirmed_at is set to now() only when age_confirmed_over_18 is true
+	// (the only case CreateUser is ever called with, in practice — the service
+	// layer rejects false before reaching here) — never backdated, never set
+	// for a false confirmation.
 	CreateUser(ctx context.Context, arg CreateUserParams) (User, error)
 	DeleteVerificationCode(ctx context.Context, arg DeleteVerificationCodeParams) error
+	DeleteVerificationCodeByTarget(ctx context.Context, arg DeleteVerificationCodeByTargetParams) error
+	GetIdentityByProviderSubject(ctx context.Context, arg GetIdentityByProviderSubjectParams) (UserIdentity, error)
 	GetRefreshTokenByHash(ctx context.Context, tokenHash string) (RefreshToken, error)
 	GetRefreshTokenByID(ctx context.Context, id uuid.UUID) (RefreshToken, error)
 	GetUserByID(ctx context.Context, id uuid.UUID) (User, error)
 	GetUserByLinkedInSub(ctx context.Context, linkedinSub pgtype.Text) (User, error)
+	// personal_email's mere presence already means "verified" in this schema
+	// (same "presence IS the signal" convention as linkedin_sub/phone_number —
+	// it's only ever written via UpdateUserPersonalEmail, which only runs
+	// after a successful OTP check) — no separate boolean to check here.
+	// Used by SignUpOrRecoverWithEmail (ADR-014 decision #3) to detect the
+	// recovery case: an email+password signup against an address that's
+	// already someone's verified personal_email.
+	GetUserByPersonalEmail(ctx context.Context, personalEmail pgtype.Text) (User, error)
 	GetVerificationCode(ctx context.Context, arg GetVerificationCodeParams) (VerificationCode, error)
+	GetVerificationCodeByTarget(ctx context.Context, arg GetVerificationCodeByTargetParams) (VerificationCode, error)
 	IncrementVerificationAttempts(ctx context.Context, arg IncrementVerificationAttemptsParams) (VerificationCode, error)
+	IncrementVerificationAttemptsByTarget(ctx context.Context, arg IncrementVerificationAttemptsByTargetParams) (VerificationCode, error)
+	InsertIdentity(ctx context.Context, arg InsertIdentityParams) (UserIdentity, error)
+	ListIdentitiesForUser(ctx context.Context, userID uuid.UUID) ([]UserIdentity, error)
 	MarkRefreshTokenReplaced(ctx context.Context, arg MarkRefreshTokenReplacedParams) error
 	RevokeRefreshTokenByHash(ctx context.Context, tokenHash string) error
+	// Used both by fresh email+password signup and by
+	// SignUpOrRecoverWithEmail's recovery path (ADR-014 decision #3) — setting
+	// a password on an existing account is the entire recovery mechanism,
+	// there's no separate "recover" mutation. hash is always an argon2id hash,
+	// never the raw password (internal/service's password.go).
+	SetUserPasswordHash(ctx context.Context, arg SetUserPasswordHashParams) (User, error)
+	// The LinkedIn branch of LinkIdentityToUser (ADR-014) — links LinkedIn to
+	// an already-authenticated Level 0+ account (Profile's "Connect LinkedIn").
+	// Direct LinkedIn signup (CompleteLinkedInOnboarding, unchanged by this
+	// slice) still creates accounts via CreateUser directly; this query is
+	// only for the linking-to-an-existing-account path. The partial unique
+	// index idx_users_linkedin_sub (migration 0001) is what actually rejects
+	// linking a LinkedIn subject already claimed by a different user — the
+	// caller (internal/service) maps that 23505 into apperror.ErrConflict,
+	// same pattern as UpdateUserPhoneNumber/UpdateUserPersonalEmail below.
+	UpdateUserLinkedInSub(ctx context.Context, arg UpdateUserLinkedInSubParams) (User, error)
 	UpdateUserPersonalDetails(ctx context.Context, arg UpdateUserPersonalDetailsParams) (User, error)
 	UpdateUserPersonalEmail(ctx context.Context, arg UpdateUserPersonalEmailParams) (User, error)
 	// Level 2/3 verification (ADR-012, backend/PLAN.md's matching addendum).
@@ -36,6 +70,14 @@ type Querier interface {
 	// existing row (including resetting attempts and created_at) rather than
 	// stacking a second one.
 	UpsertVerificationCode(ctx context.Context, arg UpsertVerificationCodeParams) (VerificationCode, error)
+	// Email+password signup (ADR-014 decision #2, migration 0004) — the
+	// account may not exist yet at OTP-send time (see
+	// SignUpOrRecoverWithEmail's recovery path), so these four mirror the
+	// four above exactly except keyed by (purpose, target) instead of
+	// (user_id, purpose), via idx_verification_codes_signup_target. Used only
+	// for VERIFICATION_PURPOSE_EMAIL_SIGNUP; user_id is always NULL on these
+	// rows.
+	UpsertVerificationCodeForSignup(ctx context.Context, arg UpsertVerificationCodeForSignupParams) (VerificationCode, error)
 }
 
 var _ Querier = (*Queries)(nil)

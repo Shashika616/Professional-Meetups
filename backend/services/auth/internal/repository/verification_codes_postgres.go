@@ -35,7 +35,7 @@ func (r *postgresVerificationCodeRepository) Upsert(
 	}
 
 	row, err := r.q.UpsertVerificationCode(ctx, sqlcgen.UpsertVerificationCodeParams{
-		UserID:    parsed,
+		UserID:    pgtypeUUID(parsed),
 		Purpose:   sqlcgen.VerificationPurpose(purpose),
 		Target:    target,
 		CodeHash:  codeHash,
@@ -54,7 +54,7 @@ func (r *postgresVerificationCodeRepository) Get(ctx context.Context, userID str
 	}
 
 	row, err := r.q.GetVerificationCode(ctx, sqlcgen.GetVerificationCodeParams{
-		UserID:  parsed,
+		UserID:  pgtypeUUID(parsed),
 		Purpose: sqlcgen.VerificationPurpose(purpose),
 	})
 	if err != nil {
@@ -73,7 +73,7 @@ func (r *postgresVerificationCodeRepository) IncrementAttempts(ctx context.Conte
 	}
 
 	row, err := r.q.IncrementVerificationAttempts(ctx, sqlcgen.IncrementVerificationAttemptsParams{
-		UserID:  parsed,
+		UserID:  pgtypeUUID(parsed),
 		Purpose: sqlcgen.VerificationPurpose(purpose),
 	})
 	if err != nil {
@@ -92,10 +92,63 @@ func (r *postgresVerificationCodeRepository) Delete(ctx context.Context, userID 
 	}
 
 	if err := r.q.DeleteVerificationCode(ctx, sqlcgen.DeleteVerificationCodeParams{
-		UserID:  parsed,
+		UserID:  pgtypeUUID(parsed),
 		Purpose: sqlcgen.VerificationPurpose(purpose),
 	}); err != nil {
 		return fmt.Errorf("repository: delete verification code: %w", err)
+	}
+	return nil
+}
+
+func (r *postgresVerificationCodeRepository) UpsertForSignup(
+	ctx context.Context, purpose VerificationPurpose, target, codeHash string, expiresAt time.Time,
+) (VerificationCode, error) {
+	row, err := r.q.UpsertVerificationCodeForSignup(ctx, sqlcgen.UpsertVerificationCodeForSignupParams{
+		Purpose:   sqlcgen.VerificationPurpose(purpose),
+		Target:    target,
+		CodeHash:  codeHash,
+		ExpiresAt: toTimestamptz(expiresAt),
+	})
+	if err != nil {
+		return VerificationCode{}, fmt.Errorf("repository: upsert verification code for signup: %w", err)
+	}
+	return verificationCodeFromRow(row), nil
+}
+
+func (r *postgresVerificationCodeRepository) GetByTarget(ctx context.Context, purpose VerificationPurpose, target string) (VerificationCode, error) {
+	row, err := r.q.GetVerificationCodeByTarget(ctx, sqlcgen.GetVerificationCodeByTargetParams{
+		Purpose: sqlcgen.VerificationPurpose(purpose),
+		Target:  target,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return VerificationCode{}, fmt.Errorf("repository: no pending %s verification code for target: %w", purpose, apperror.ErrNotFound)
+		}
+		return VerificationCode{}, fmt.Errorf("repository: get verification code by target: %w", err)
+	}
+	return verificationCodeFromRow(row), nil
+}
+
+func (r *postgresVerificationCodeRepository) IncrementAttemptsByTarget(ctx context.Context, purpose VerificationPurpose, target string) (VerificationCode, error) {
+	row, err := r.q.IncrementVerificationAttemptsByTarget(ctx, sqlcgen.IncrementVerificationAttemptsByTargetParams{
+		Purpose: sqlcgen.VerificationPurpose(purpose),
+		Target:  target,
+	})
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return VerificationCode{}, fmt.Errorf("repository: no pending %s verification code for target: %w", purpose, apperror.ErrNotFound)
+		}
+		return VerificationCode{}, fmt.Errorf("repository: increment verification attempts by target: %w", err)
+	}
+	return verificationCodeFromRow(row), nil
+}
+
+func (r *postgresVerificationCodeRepository) DeleteByTarget(ctx context.Context, purpose VerificationPurpose, target string) error {
+	if err := r.q.DeleteVerificationCodeByTarget(ctx, sqlcgen.DeleteVerificationCodeByTargetParams{
+		Purpose: sqlcgen.VerificationPurpose(purpose),
+		Target:  target,
+	}); err != nil {
+		return fmt.Errorf("repository: delete verification code by target: %w", err)
 	}
 	return nil
 }

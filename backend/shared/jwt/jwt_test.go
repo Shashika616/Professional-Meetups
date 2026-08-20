@@ -82,6 +82,40 @@ func TestSignVerifyRoundTrip(t *testing.T) {
 	}
 }
 
+// TestSignVerifyRoundTrip_TrustLevelZero guards ADR-014's Level 0: the
+// trust_level claim can now legitimately be 0 (a real, federated-only
+// account, not an error state) — Claims.TrustLevel has no `omitempty` tag,
+// so 0 must round-trip as an explicit, present claim, not be
+// indistinguishable from a token that never carried one at all.
+func TestSignVerifyRoundTrip_TrustLevelZero(t *testing.T) {
+	privPath, pubPath := generateTestKeypair(t)
+
+	signer, err := NewSigner(privPath)
+	if err != nil {
+		t.Fatalf("NewSigner: %v", err)
+	}
+	verifier, err := NewVerifier(pubPath)
+	if err != nil {
+		t.Fatalf("NewVerifier: %v", err)
+	}
+
+	token, err := signer.Sign(Claims{UserID: "user-1", TrustLevel: 0})
+	if err != nil {
+		t.Fatalf("Sign: %v", err)
+	}
+
+	claims, err := verifier.Verify(token)
+	if err != nil {
+		t.Fatalf("Verify: %v", err)
+	}
+	if claims.TrustLevel != 0 {
+		t.Errorf("TrustLevel = %d, want 0", claims.TrustLevel)
+	}
+	if claims.UserID != "user-1" {
+		t.Errorf("UserID = %q, want %q", claims.UserID, "user-1")
+	}
+}
+
 func TestVerifyRejectsTamperedToken(t *testing.T) {
 	privPath, pubPath := generateTestKeypair(t)
 

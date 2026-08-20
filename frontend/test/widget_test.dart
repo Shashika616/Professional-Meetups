@@ -1,3 +1,4 @@
+import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage_platform_interface/flutter_secure_storage_platform_interface.dart';
@@ -31,7 +32,22 @@ void main() {
     await tester.pump();
     await tester.pump(const Duration(milliseconds: 400));
 
-    // Verify that the onboarding welcome screen builds without crashing.
+    // OnboardingFlow now shows the mandatory age-confirmation step first
+    // (ADR-014) — verify it builds without crashing, then confirm it and
+    // reach the choose-method step.
+    expect(
+      find.text('I confirm I am 18 years of age or older.'),
+      findsOneWidget,
+    );
+
+    await tester.tap(find.byType(Checkbox));
+    await tester.pump();
+    await tester.tap(find.text('CONTINUE'));
+    await tester.pump();
+    await tester.pump(const Duration(milliseconds: 400));
+
+    // Verify that the onboarding choose-method screen builds without
+    // crashing.
     expect(find.text('CONTINUE WITH LINKEDIN'), findsOneWidget);
   });
 }

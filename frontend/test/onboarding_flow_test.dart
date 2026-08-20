@@ -1,5 +1,6 @@
 import 'dart:async';
 
+import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:flutter_secure_storage/flutter_secure_storage.dart';
@@ -15,6 +16,7 @@ import 'package:professional_connections_platform/core/storage/session_storage.d
 import 'package:professional_connections_platform/core/widgets/gradient_button.dart';
 import 'package:professional_connections_platform/features/onboarding/onboarding_flow.dart';
 
+import 'support/fake_meetup_service.dart';
 import 'support/fake_secure_storage_platform.dart';
 
 class _FakeAuthService implements AuthService {
@@ -46,12 +48,45 @@ class _FakeAuthService implements AuthService {
   int callCount = 0;
 
   @override
-  Future<AuthSession> signInWithLinkedIn() async {
+  Future<AuthSession> signInWithLinkedIn({
+    required bool ageConfirmedOver18,
+  }) async {
     callCount++;
     if (_completer != null) return _completer.future;
     if (_error != null) throw _error;
     return _session!;
   }
+
+  @override
+  Future<AuthSession> signInWithApple({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signInWithGoogle({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signUpWithEmail({
+    required String email,
+    required String code,
+    required String password,
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> loginWithEmail({
+    required String email,
+    required String password,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> linkLinkedIn() async => throw UnimplementedError();
+
+  @override
+  Future<int> startEmailSignupOtp(String email) async =>
+      throw UnimplementedError();
 
   @override
   Future<AuthSession> refreshSession(String refreshToken) async =>
@@ -114,6 +149,16 @@ final _testSession = AuthSession(
   profilePhotoUrl: '',
 );
 
+/// Checks the age-confirmation box and taps CONTINUE — every test starts
+/// here now (ADR-014: the age gate is shown first, before any signup
+/// option is even visible).
+Future<void> _confirmAge(WidgetTester tester) async {
+  await tester.tap(find.byType(Checkbox));
+  await tester.pumpAndSettle();
+  await tester.tap(find.text('CONTINUE'));
+  await tester.pumpAndSettle();
+}
+
 /// Taps "Skip for now" on all four verification screens in sequence — each
 /// tap pops the current screen and pumpAndSettle lands on the next one
 /// (or, after the fourth, on AppShell).
@@ -131,6 +176,18 @@ Widget _appWith(AuthService authService) {
       sessionStorageProvider.overrideWithValue(
         SecureSessionStorage(storage: const FlutterSecureStorage()),
       ),
+      // Success path lands on AppShell, whose HomePage reads
+      // myMeetupsProvider (backed by this) — without an override it
+      // defaults to the real HttpMeetupService and attempts a live
+      // network call.
+      meetupServiceProvider.overrideWithValue(ImmediateMeetupService()),
+      // NetworkInsightsRow's homeStatsProvider has its own real 1s
+      // Future.delayed — pumpAndSettle doesn't reliably advance fake
+      // time far enough to flush a bare unscheduled Timer nothing else
+      // keeps re-triggering, leaking a pending timer past test teardown.
+      homeStatsProvider.overrideWith(
+        (ref) async => const {'nearby': 0, 'meetups': 0, 'trustScore': 0.0},
+      ),
     ],
     child: const MaterialApp(home: OnboardingFlow()),
   );
@@ -146,8 +203,9 @@ void main() {
     (tester) async {
       await tester.pumpWidget(_appWith(_FakeAuthService.success(_testSession)));
       await tester.pumpAndSettle();
+      await _confirmAge(tester);
 
-      await tester.tap(find.byType(GradientButton));
+      await tester.tap(find.text('CONTINUE WITH LINKEDIN'));
       await tester.pumpAndSettle();
 
       // Lands on the first verification screen (phone) — not AppShell yet,
@@ -171,6 +229,7 @@ void main() {
           profile: const UserProfile(
             id: 'user-1',
             fullName: 'Ada Lovelace',
+            trustLevel: 1,
             phoneVerified: true,
             workEmailVerified: true,
             // personalEmailVerified/personalDetailsComplete left false —
@@ -179,8 +238,9 @@ void main() {
         );
         await tester.pumpWidget(_appWith(auth));
         await tester.pumpAndSettle();
+        await _confirmAge(tester);
 
-        await tester.tap(find.byType(GradientButton));
+        await tester.tap(find.text('CONTINUE WITH LINKEDIN'));
         await tester.pumpAndSettle();
 
         // Phone is already verified — the sequence must not start there.
@@ -212,6 +272,7 @@ void main() {
           profile: const UserProfile(
             id: 'user-1',
             fullName: 'Ada Lovelace',
+            trustLevel: 1,
             phoneVerified: true,
             personalEmailVerified: true,
             personalDetailsComplete: true,
@@ -220,8 +281,9 @@ void main() {
         );
         await tester.pumpWidget(_appWith(auth));
         await tester.pumpAndSettle();
+        await _confirmAge(tester);
 
-        await tester.tap(find.byType(GradientButton));
+        await tester.tap(find.text('CONTINUE WITH LINKEDIN'));
         await tester.pumpAndSettle();
 
         expect(find.byType(AppShell), findsOneWidget);
@@ -238,8 +300,9 @@ void main() {
     );
     await tester.pumpWidget(_appWith(auth));
     await tester.pumpAndSettle();
+    await _confirmAge(tester);
 
-    await tester.tap(find.byType(GradientButton));
+    await tester.tap(find.text('CONTINUE WITH LINKEDIN'));
     await tester.pumpAndSettle();
 
     expect(find.byType(OnboardingFlow), findsOneWidget);
@@ -247,21 +310,42 @@ void main() {
     expect(find.text('linkedin rejected the code'), findsOneWidget);
   });
 
-  testWidgets('trust microcopy renders on the welcome step', (tester) async {
+  testWidgets('age confirmation is shown before any signup option', (
+    tester,
+  ) async {
     await tester.pumpWidget(_appWith(_FakeAuthService.success(_testSession)));
     await tester.pumpAndSettle();
 
-    // States why LinkedIn specifically...
-    expect(find.textContaining('real, working professional'), findsOneWidget);
-    // ...and pre-empts the posting/connections-access worry, accurately to
-    // the actual requested scope (openid profile email — no posting or
-    // connections access) in http_auth_service.dart.
     expect(
-      find.textContaining(
-        'never post on your behalf or access your connections',
-      ),
+      find.text('I confirm I am 18 years of age or older.'),
       findsOneWidget,
     );
+    expect(find.text('CONTINUE WITH LINKEDIN'), findsNothing);
+
+    // CONTINUE is disabled until the box is checked.
+    await tester.tap(find.text('CONTINUE'));
+    await tester.pumpAndSettle();
+    expect(
+      find.text('I confirm I am 18 years of age or older.'),
+      findsOneWidget,
+    );
+
+    await _confirmAge(tester);
+    expect(find.text('CONTINUE WITH LINKEDIN'), findsOneWidget);
+  });
+
+  testWidgets('ADR-014 microcopy renders on the choose-method step', (
+    tester,
+  ) async {
+    await tester.pumpWidget(_appWith(_FakeAuthService.success(_testSession)));
+    await tester.pumpAndSettle();
+    await _confirmAge(tester);
+
+    expect(
+      find.textContaining('keeps your account more restricted'),
+      findsOneWidget,
+    );
+    expect(find.text('Sign up with email'), findsOneWidget);
   });
 
   testWidgets(
@@ -270,8 +354,12 @@ void main() {
       final auth = _FakeAuthService.pending();
       await tester.pumpWidget(_appWith(auth));
       await tester.pumpAndSettle();
+      await _confirmAge(tester);
 
-      final button = find.byType(GradientButton);
+      // A stable Key, not find.text(...) — GradientButton swaps its label
+      // for a spinner once isLoading is true, so a text-based finder would
+      // find nothing for the second tap below.
+      final button = find.byKey(const Key('continueWithLinkedIn'));
 
       await tester.tap(button);
       await tester.pump(); // enters the loading state; never settles, the
@@ -285,4 +373,40 @@ void main() {
       expect(auth.callCount, 1);
     },
   );
+
+  group('Apple Guideline 4.8 — equal visual weight on iOS', () {
+    testWidgets(
+      'CONTINUE WITH APPLE and CONTINUE WITH LINKEDIN render at the same '
+      'size — a real layout assertion, not just "looks right"',
+      (tester) async {
+        debugDefaultTargetPlatformOverride = TargetPlatform.iOS;
+
+        await tester.pumpWidget(
+          _appWith(_FakeAuthService.success(_testSession)),
+        );
+        await tester.pumpAndSettle();
+        await _confirmAge(tester);
+
+        expect(find.text('CONTINUE WITH APPLE'), findsOneWidget);
+        expect(find.text('CONTINUE WITH LINKEDIN'), findsOneWidget);
+
+        final appleSize = tester.getSize(
+          find.ancestor(
+            of: find.text('CONTINUE WITH APPLE'),
+            matching: find.byType(GradientButton),
+          ),
+        );
+        final linkedInSize = tester.getSize(
+          find.byKey(const Key('continueWithLinkedIn')),
+        );
+
+        // Reset before the test body returns — the framework asserts every
+        // debug var is back to its default as soon as the test body
+        // completes, before any addTearDown callback would run.
+        debugDefaultTargetPlatformOverride = null;
+
+        expect(appleSize, linkedInSize);
+      },
+    );
+  });
 }

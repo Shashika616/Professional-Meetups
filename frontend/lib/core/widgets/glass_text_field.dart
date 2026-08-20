@@ -14,6 +14,9 @@ class GlassTextField extends StatelessWidget {
     this.maxLength,
     this.textAlign = TextAlign.left,
     this.letterSpacing,
+    this.textInputAction,
+    this.onFieldSubmitted,
+    this.obscureText = false,
   });
 
   final TextEditingController controller;
@@ -24,6 +27,15 @@ class GlassTextField extends StatelessWidget {
   final int? maxLength;
   final TextAlign textAlign;
   final double? letterSpacing;
+  final TextInputAction? textInputAction;
+  // A location search field's "type a full query and press search/return"
+  // path (frontend/meetup-scheduling-PLAN.md's 2026-08-18 platform-split
+  // addendum, Step 2) — optional, every other caller of this field leaves
+  // it null and gets the previous behavior unchanged.
+  final void Function(String)? onFieldSubmitted;
+  // Email+password signup/login (ADR-014 decision #2) — optional, defaults
+  // to false so every existing caller is unaffected.
+  final bool obscureText;
 
   @override
   Widget build(BuildContext context) {
@@ -36,6 +48,9 @@ class GlassTextField extends StatelessWidget {
         textAlign: textAlign,
         autocorrect: false,
         maxLength: maxLength,
+        textInputAction: textInputAction,
+        onFieldSubmitted: onFieldSubmitted,
+        obscureText: obscureText,
         style: TextStyle(
           color: AppPalette.textPrimary,
           fontSize: 16,

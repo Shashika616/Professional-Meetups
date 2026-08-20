@@ -10,7 +10,10 @@ import (
 
 type contextKey int
 
-const userIDKey contextKey = iota
+const (
+	userIDKey contextKey = iota
+	trustLevelKey
+)
 
 // WithUserID returns a context carrying the authenticated user's ID —
 // exported mainly for tests; Auth is the only production caller.
@@ -24,6 +27,24 @@ func WithUserID(ctx context.Context, userID string) context.Context {
 func UserIDFromContext(ctx context.Context) string {
 	id, _ := ctx.Value(userIDKey).(string)
 	return id
+}
+
+// WithTrustLevel returns a context carrying the authenticated user's trust
+// level — exported mainly for tests; Auth is the only production caller.
+func WithTrustLevel(ctx context.Context, trustLevel int) context.Context {
+	return context.WithValue(ctx, trustLevelKey, trustLevel)
+}
+
+// TrustLevelFromContext returns the trust_level claim Auth attached to the
+// request context, or 0 if none is present. First consumer is the
+// meetup-scheduling slice's server-side trust gate (ADR-013,
+// backend/meetup-scheduling-PLAN.md Step B) — the claim can only be stale
+// low (a user's trust level only ever increases, never decreases, so an
+// unrefreshed token can under-grant but never over-grant access), which is
+// the safe direction for a gate to be wrong in.
+func TrustLevelFromContext(ctx context.Context) int {
+	level, _ := ctx.Value(trustLevelKey).(int)
+	return level
 }
 
 // Auth verifies the "Authorization: Bearer <access_token>" header using
@@ -52,7 +73,9 @@ func Auth(verifier *jwt.Verifier) func(http.Handler) http.Handler {
 				return
 			}
 
-			next.ServeHTTP(w, r.WithContext(WithUserID(r.Context(), claims.UserID)))
+			ctx := WithUserID(r.Context(), claims.UserID)
+			ctx = WithTrustLevel(ctx, claims.TrustLevel)
+			next.ServeHTTP(w, r.WithContext(ctx))
 		})
 	}
 }

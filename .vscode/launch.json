@@ -1,0 +1,36 @@
+{
+  // Flutter run configs that auto-pass frontend/.env's credentials (Stadia
+  // Maps key, etc. — see frontend/.env.example) via --dart-define-from-file,
+  // so you don't have to type it on the command line every time. Requires
+  // frontend/.env to actually exist first (copy frontend/.env.example).
+  //
+  // Two configs because GATEWAY_BASE_URL differs by target
+  // (backend/README.md's documented gotcha): the iOS simulator reaches the
+  // backend at localhost directly (the .env default), but the Android
+  // emulator needs 10.0.2.2 (its alias for the host machine's localhost) —
+  // the second config's extra --dart-define overrides just that one key,
+  // since a --dart-define always wins over the same key in --dart-define-
+  // from-file.
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Flutter (.env — iOS/default)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "frontend",
+      "program": "lib/main.dart",
+      "args": ["--dart-define-from-file=.env"]
+    },
+    {
+      "name": "Flutter (.env — Android emulator)",
+      "request": "launch",
+      "type": "dart",
+      "cwd": "frontend",
+      "program": "lib/main.dart",
+      "args": [
+        "--dart-define-from-file=.env",
+        "--dart-define=GATEWAY_BASE_URL=http://10.0.2.2:8080"
+      ]
+    }
+  ]
+}

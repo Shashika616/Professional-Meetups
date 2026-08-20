@@ -13,6 +13,7 @@ class AppPalette {
   static const Color textSecondary = Color(0xFF93A1AC);
   static const Color verified = Color(0xFF4ADE80);
   static const Color danger = Color(0xFFE5484D);
+  static const Color gold = Color(0xFFE5B93D);
   static const Color glassTint = Color(0x14B2D5E5);
   static const Color glassBorder = Color(0x26FFFFFF);
 }

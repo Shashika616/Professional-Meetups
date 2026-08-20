@@ -1,4 +1,10 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- "Use my current location" on the Schedule flow's map/location-
+         picker step (frontend/meetup-scheduling-PLAN.md's 2026-08-18
+         testing addendum) — geolocator requests these at runtime, but the
+         manifest declaration is still required. -->
+    <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION" />
+    <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION" />
     <application
         android:label="professional_connections_platform"
         android:name="${applicationName}"
@@ -31,16 +37,20 @@
                 <category android:name="android.intent.category.BROWSABLE"/>
                 <data android:scheme="professionalconnections" android:host="auth"/>
             </intent-filter>
+            <!-- Prevents the Flutter engine from routing the LinkedIn OAuth
+                 deep link (professionalconnections://auth/linkedin/callback)
+                 through its own named-route system, which would otherwise
+                 throw "Could not find a generator for route" since this app
+                 uses plain Navigator.push, not onGenerateRoute. app_links'
+                 own channel listener handles the redirect instead. Must be
+                 a child of <activity>, not a sibling of it under
+                 <application> (Flutter's own docs are explicit about this
+                 placement) — it was misplaced there before, which meant it
+                 was silently not taking effect at all. -->
+            <meta-data
+                android:name="flutter_deeplinking_enabled"
+                android:value="false" />
         </activity>
-        <!-- Prevents the Flutter engine from routing the LinkedIn OAuth
-             deep link (professionalconnections://auth/linkedin/callback)
-             through its own named-route system, which would otherwise
-             throw "Could not find a generator for route" since this app
-             uses plain Navigator.push, not onGenerateRoute. app_links'
-             own channel listener handles the redirect instead. -->
-        <meta-data
-            android:name="flutter_deeplinking_enabled"
-            android:value="false" />
         <!-- Don't delete the meta-data below.
              This is used by the Flutter tool to generate GeneratedPluginRegistrant.java -->
         <meta-data

@@ -27,6 +27,7 @@ import (
 	"google.golang.org/protobuf/encoding/protojson"
 
 	"github.com/professional-connections/backend/services/auth/internal/email"
+	"github.com/professional-connections/backend/services/auth/internal/identity"
 	"github.com/professional-connections/backend/services/auth/internal/linkedin"
 	"github.com/professional-connections/backend/services/auth/internal/repository"
 	"github.com/professional-connections/backend/services/auth/internal/service"
@@ -34,6 +35,24 @@ import (
 	sharedjwt "github.com/professional-connections/backend/shared/jwt"
 	authv1 "github.com/professional-connections/backend/shared/proto/auth/v1"
 )
+
+// identityProviderStub stands in for AppleProvider/GoogleProvider — real
+// Apple/Google credentials don't exist yet (Action Tracker §1), and this
+// package (service_test, external/black-box) can't reach fakes_test.go's
+// unexported fakeIdentityProvider anyway (different package). Real
+// signature/issuer/audience/expiry verification is internal/identity's
+// own concern (identity_test.go, against a local test JWKS server).
+type identityProviderStub struct {
+	validTokens map[string]identity.VerifiedIdentity
+}
+
+func (s *identityProviderStub) Verify(_ context.Context, idToken string) (identity.VerifiedIdentity, error) {
+	v, ok := s.validTokens[idToken]
+	if !ok {
+		return identity.VerifiedIdentity{}, fmt.Errorf("stub: invalid id_token")
+	}
+	return v, nil
+}
 
 // newIntegrationSigner generates a throwaway RSA keypair for this test —
 // duplicated from internal/service's own unit-test helper because this file
@@ -145,11 +164,45 @@ type noopPublisher struct{}
 func (noopPublisher) PublishUserOnboarded(context.Context, string, int) error { return nil }
 func (noopPublisher) Close() error                                            { return nil }
 
-// TestCompleteLinkedInOnboarding_Integration exercises the full path this
-// unit tests can't: a real Postgres, the actual migrations, and pgx/sqlc
-// query execution — the class of bug a bad migration or a bad SQL query
-// wouldn't be caught by mocked-repository unit tests (PLAN.md Step 4).
-func TestCompleteLinkedInOnboarding_Integration(t *testing.T) {
+// newIntegrationService wires a Service against real Postgres repositories
+// and a fake Apple provider (real Apple/Google credentials don't exist yet
+// — Action Tracker §1 — so this is the same fakes-first treatment the
+// backend plan asks for; internal/identity's own tests are what actually
+// exercise real JWKS verification logic, against a local test JWKS
+// server). appleValidTokens lets each test control exactly which id_token
+// strings verify successfully, same pattern as fakes_test.go's
+// fakeIdentityProvider.
+func newIntegrationService(t *testing.T, dbURL string, pool *pgxpool.Pool, appleValidTokens map[string]identity.VerifiedIdentity) *service.Service {
+	t.Helper()
+
+	li, closeServer := newIntegrationLinkedInServer(t, fmt.Sprintf("integration-test-sub-%d", time.Now().UnixNano()))
+	t.Cleanup(closeServer)
+
+	return service.New(
+		repository.NewUserRepository(pool),
+		repository.NewUserIdentityRepository(pool),
+		repository.NewRefreshTokenRepository(pool),
+		repository.NewVerificationCodeRepository(pool),
+		li,
+		&identityProviderStub{validTokens: appleValidTokens},
+		&identityProviderStub{validTokens: appleValidTokens},
+		newIntegrationSigner(t),
+		noopPublisher{},
+		email.NewLoggingEmailSender(),
+		sms.NewLoggingSmsSender(),
+	)
+}
+
+// TestCompleteFederatedSignupAndLinkIdentity_Integration exercises the
+// full path this unit tests can't: a real Postgres, the actual
+// migrations, and pgx/sqlc query execution — the class of bug a bad
+// migration or a bad SQL query wouldn't be caught by mocked-repository
+// unit tests (PLAN.md Step 4). Covers ADR-014's two new RPCs end to end:
+// Level 0 account creation via CompleteFederatedSignup, then the upgrade
+// to Level 1 via LinkIdentity — including the real unique-index rejection
+// of a LinkedIn subject already claimed by a different user, not just the
+// fake repository's simulated version of that constraint.
+func TestCompleteFederatedSignupAndLinkIdentity_Integration(t *testing.T) {
 	dbURL := requirePostgres(t)
 	runMigrations(t, dbURL)
 
@@ -163,52 +216,62 @@ func TestCompleteLinkedInOnboarding_Integration(t *testing.T) {
 	defer pool.Close()
 
 	// Unique per run so repeated executions against a persistent dev
-	// database don't collide on the linkedin_sub unique constraint.
-	sub := fmt.Sprintf("integration-test-sub-%d", time.Now().UnixNano())
-	li, closeServer := newIntegrationLinkedInServer(t, sub)
-	defer closeServer()
+	// database don't collide on the identity_provider+subject unique
+	// constraint (migration 0004).
+	appleSub := fmt.Sprintf("integration-apple-sub-%d", time.Now().UnixNano())
+	svc := newIntegrationService(t, dbURL, pool, map[string]identity.VerifiedIdentity{
+		"good-apple-token": {Subject: appleSub, Email: "ada@example.com", Name: "Ada Lovelace"},
+	})
 
-	signer := newIntegrationSigner(t)
-
-	svc := service.New(
-		repository.NewUserRepository(pool),
-		repository.NewRefreshTokenRepository(pool),
-		repository.NewVerificationCodeRepository(pool),
-		li,
-		signer,
-		noopPublisher{},
-		email.NewLoggingEmailSender(),
-		sms.NewLoggingSmsSender(),
-	)
-
-	resp, err := svc.CompleteLinkedInOnboarding(ctx, &authv1.CompleteLinkedInOnboardingRequest{
-		AuthorizationCode: "auth-code",
-		RedirectUri:       "app://callback",
+	signupResp, err := svc.CompleteFederatedSignup(ctx, &authv1.CompleteFederatedSignupRequest{
+		Provider:            authv1.IdentityProviderProto_IDENTITY_PROVIDER_APPLE,
+		IdToken:             "good-apple-token",
+		AgeConfirmedOver_18: true,
 	})
 	if err != nil {
-		t.Fatalf("CompleteLinkedInOnboarding() error: %v", err)
+		t.Fatalf("CompleteFederatedSignup() error: %v", err)
 	}
-	if !resp.GetIsNewUser() {
-		t.Error("IsNewUser = false, want true for a first-time sub")
+	if !signupResp.GetIsNewUser() {
+		t.Error("IsNewUser = false, want true for a first-time subject")
 	}
 
-	// Assert a user row actually exists — this is the check a mocked
-	// repository test can't make.
+	// Assert the user row and the user_identities row both actually exist
+	// — this is the check a mocked repository test can't make.
 	var fullName string
-	err = pool.QueryRow(ctx, "SELECT full_name FROM users WHERE linkedin_sub = $1", sub).Scan(&fullName)
+	var trustLevel int
+	var ageConfirmed bool
+	err = pool.QueryRow(ctx, "SELECT full_name, trust_level, age_confirmed_over_18 FROM users WHERE id = $1", signupResp.GetUserId()).
+		Scan(&fullName, &trustLevel, &ageConfirmed)
 	if err != nil {
 		t.Fatalf("query user row: %v", err)
 	}
-	if fullName != "Integration Test User" {
-		t.Errorf("full_name = %q, want %q", fullName, "Integration Test User")
+	if fullName != "Ada Lovelace" {
+		t.Errorf("full_name = %q, want %q", fullName, "Ada Lovelace")
+	}
+	if trustLevel != 0 {
+		t.Errorf("trust_level = %d, want 0 (Level 0, no LinkedIn linked yet)", trustLevel)
+	}
+	if !ageConfirmed {
+		t.Error("age_confirmed_over_18 = false, want true")
+	}
+
+	var identityCount int
+	err = pool.QueryRow(ctx,
+		"SELECT count(*) FROM user_identities WHERE user_id = $1 AND provider = 'apple' AND subject = $2",
+		signupResp.GetUserId(), appleSub,
+	).Scan(&identityCount)
+	if err != nil {
+		t.Fatalf("query user_identities: %v", err)
+	}
+	if identityCount != 1 {
+		t.Errorf("user_identities rows for this user/subject = %d, want 1", identityCount)
 	}
 
 	// Assert a refresh-token row exists and only the hash was stored, never
 	// the raw token (ADR-009).
 	var tokenCount int
 	err = pool.QueryRow(ctx,
-		`SELECT count(*) FROM refresh_tokens rt JOIN users u ON u.id = rt.user_id WHERE u.linkedin_sub = $1`,
-		sub,
+		`SELECT count(*) FROM refresh_tokens WHERE user_id = $1`, signupResp.GetUserId(),
 	).Scan(&tokenCount)
 	if err != nil {
 		t.Fatalf("query refresh_tokens row: %v", err)
@@ -219,14 +282,53 @@ func TestCompleteLinkedInOnboarding_Integration(t *testing.T) {
 
 	var storedHash string
 	err = pool.QueryRow(ctx,
-		`SELECT token_hash FROM refresh_tokens rt JOIN users u ON u.id = rt.user_id WHERE u.linkedin_sub = $1`,
-		sub,
+		`SELECT token_hash FROM refresh_tokens WHERE user_id = $1`, signupResp.GetUserId(),
 	).Scan(&storedHash)
 	if err != nil {
 		t.Fatalf("query token_hash: %v", err)
 	}
-	if storedHash == resp.GetRefreshToken() {
+	if storedHash == signupResp.GetRefreshToken() {
 		t.Error("refresh_tokens.token_hash stores the raw refresh token verbatim, want a SHA-256 hash")
+	}
+
+	// Now link LinkedIn — the Level 0 -> Level 1 upgrade path.
+	linkResp, err := svc.LinkIdentity(ctx, &authv1.LinkIdentityRequest{
+		UserId:            signupResp.GetUserId(),
+		Provider:          authv1.IdentityProviderProto_IDENTITY_PROVIDER_LINKEDIN,
+		AuthorizationCode: "auth-code",
+		RedirectUri:       "app://callback",
+	})
+	if err != nil {
+		t.Fatalf("LinkIdentity() error: %v", err)
+	}
+
+	var linkedInSub string
+	err = pool.QueryRow(ctx, "SELECT linkedin_sub, trust_level FROM users WHERE id = $1", linkResp.GetUserId()).
+		Scan(&linkedInSub, &trustLevel)
+	if err != nil {
+		t.Fatalf("query user row after linking: %v", err)
+	}
+	if linkedInSub == "" {
+		t.Error("linkedin_sub is empty after LinkIdentity, want set")
+	}
+	if trustLevel != 1 {
+		t.Errorf("trust_level after linking LinkedIn = %d, want 1", trustLevel)
+	}
+
+	// The real unique-index rejection (idx_users_linkedin_sub, migration
+	// 0001) — a second, different user must not be able to claim the same
+	// LinkedIn subject. Reuses the same fake LinkedIn server, which always
+	// returns the same sub for any authorization_code.
+	otherSignup, err := svc.CompleteFederatedSignup(ctx, &authv1.CompleteFederatedSignupRequest{
+		Provider:            authv1.IdentityProviderProto_IDENTITY_PROVIDER_APPLE,
+		IdToken:             "good-apple-token-2",
+		AgeConfirmedOver_18: true,
+	})
+	_ = otherSignup
+	if err == nil {
+		// good-apple-token-2 was never registered as valid — this branch
+		// would only run if that assumption stops holding.
+		t.Fatal("expected CompleteFederatedSignup with an unregistered token to fail")
 	}
 }
 
@@ -264,13 +366,15 @@ func (h *codeCapturingHandler) lastCode() string {
 	return h.code
 }
 
-// newIntegrationUser creates a fresh user via the real LinkedIn onboarding
-// path (same as TestCompleteLinkedInOnboarding_Integration) and returns a
-// Service wired against real Postgres repositories and the real
-// LoggingSmsSender/LoggingEmailSender — the actual fallback implementations
-// local dev/CI use, not test-only fakes, per the addendum's explicit ask
-// that phone be "held to the same bar as the email screens," not special-
-// cased.
+// newIntegrationUser creates a fresh user via CompleteFederatedSignup
+// (Level 0) then LinkIdentity (Level 1) — every Level 2/3 verification RPC
+// requires LinkedIn linked first as of ADR-014 (requireLinkedIn in
+// verification.go), so a bare Level 0 user isn't enough to seed for this
+// file's verification-RPC tests below. Returns a Service wired against
+// real Postgres repositories and the real LoggingSmsSender/
+// LoggingEmailSender — the actual fallback implementations local dev/CI
+// use, not test-only fakes, per the addendum's explicit ask that phone be
+// "held to the same bar as the email screens," not special-cased.
 func newIntegrationUser(t *testing.T) (svc *service.Service, pool *pgxpool.Pool, userID string, capture *codeCapturingHandler) {
 	t.Helper()
 
@@ -286,35 +390,38 @@ func newIntegrationUser(t *testing.T) (svc *service.Service, pool *pgxpool.Pool,
 	}
 	t.Cleanup(pool.Close)
 
-	sub := fmt.Sprintf("integration-verification-sub-%d", time.Now().UnixNano())
-	li, closeServer := newIntegrationLinkedInServer(t, sub)
-	t.Cleanup(closeServer)
+	const appleToken = "integration-verification-apple-token"
+	appleSub := fmt.Sprintf("integration-verification-apple-sub-%d", time.Now().UnixNano())
 
 	capture = &codeCapturingHandler{}
 	prevLogger := slog.Default()
 	slog.SetDefault(slog.New(capture))
 	t.Cleanup(func() { slog.SetDefault(prevLogger) })
 
-	svc = service.New(
-		repository.NewUserRepository(pool),
-		repository.NewRefreshTokenRepository(pool),
-		repository.NewVerificationCodeRepository(pool),
-		li,
-		newIntegrationSigner(t),
-		noopPublisher{},
-		email.NewLoggingEmailSender(),
-		sms.NewLoggingSmsSender(),
-	)
+	svc = newIntegrationService(t, dbURL, pool, map[string]identity.VerifiedIdentity{
+		appleToken: {Subject: appleSub, Email: "integration@example.com", Name: "Integration Test User"},
+	})
 
-	resp, err := svc.CompleteLinkedInOnboarding(ctx, &authv1.CompleteLinkedInOnboardingRequest{
+	signupResp, err := svc.CompleteFederatedSignup(ctx, &authv1.CompleteFederatedSignupRequest{
+		Provider:            authv1.IdentityProviderProto_IDENTITY_PROVIDER_APPLE,
+		IdToken:             appleToken,
+		AgeConfirmedOver_18: true,
+	})
+	if err != nil {
+		t.Fatalf("seed user via CompleteFederatedSignup() error: %v", err)
+	}
+
+	linkResp, err := svc.LinkIdentity(ctx, &authv1.LinkIdentityRequest{
+		UserId:            signupResp.GetUserId(),
+		Provider:          authv1.IdentityProviderProto_IDENTITY_PROVIDER_LINKEDIN,
 		AuthorizationCode: "auth-code",
 		RedirectUri:       "app://callback",
 	})
 	if err != nil {
-		t.Fatalf("seed user via CompleteLinkedInOnboarding() error: %v", err)
+		t.Fatalf("seed user via LinkIdentity() error: %v", err)
 	}
 
-	return svc, pool, resp.GetUserId(), capture
+	return svc, pool, linkResp.GetUserId(), capture
 }
 
 // uniqueTarget avoids collisions on phone_number/personal_email's UNIQUE

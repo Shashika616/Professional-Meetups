@@ -107,13 +107,16 @@ class _GradientButtonState extends State<GradientButton> {
                             Icon(widget.icon, size: 20, color: AppPalette.onyx),
                             const SizedBox(width: 12),
                           ],
-                          Text(
-                            widget.label,
-                            style: const TextStyle(
-                              color: AppPalette.onyx,
-                              fontWeight: FontWeight.w800,
-                              letterSpacing: 1.5,
-                              fontSize: 15,
+                          Flexible(
+                            child: Text(
+                              widget.label,
+                              overflow: TextOverflow.ellipsis,
+                              style: const TextStyle(
+                                color: AppPalette.onyx,
+                                fontWeight: FontWeight.w800,
+                                letterSpacing: 1.5,
+                                fontSize: 15,
+                              ),
                             ),
                           ),
                         ],

@@ -3,8 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:professional_connections_platform/core/providers/app_providers.dart';
 import 'package:professional_connections_platform/core/services/auth_service.dart';
-import 'package:professional_connections_platform/core/utils/snacks.dart';
-import 'package:professional_connections_platform/core/utils/toast.dart';
 import 'package:professional_connections_platform/core/widgets/glass_text_field.dart';
 import 'package:professional_connections_platform/core/widgets/gradient_button.dart';
 import 'package:professional_connections_platform/features/verification/widgets/otp_entry.dart';
@@ -31,8 +29,7 @@ class _PhoneVerificationPageState extends ConsumerState<PhoneVerificationPage> {
   static const _countryCode = '+94';
 
   final _numberController = TextEditingController();
-  bool _sending = false;
-  int? _resendAfterSeconds;
+  bool _showOtpEntry = false;
 
   @override
   void initState() {
@@ -53,37 +50,29 @@ class _PhoneVerificationPageState extends ConsumerState<PhoneVerificationPage> {
 
   String get _fullNumber => '$_countryCode${_numberController.text.trim()}';
 
-  Future<void> _sendCode() async {
-    if (_sending || _numberController.text.trim().isEmpty) return;
-    setState(() => _sending = true);
+  // Optimistic transition (UX improvement) — flips to the OTP entry screen
+  // immediately, instead of waiting on the network call first; OtpEntry
+  // sends the code itself once mounted, via [_startVerification], and
+  // shows its own optimistic countdown/loading/error state for that — see
+  // OtpEntry's own doc comment for why a slow or failing backend no longer
+  // stalls this screen.
+  void _showOtp() {
+    if (_showOtpEntry || _numberController.text.trim().isEmpty) return;
+    setState(() => _showOtpEntry = true);
+  }
+
+  Future<int> _startVerification() async {
     try {
-      final resendAfterSeconds = await ref
+      return await ref
           .read(authServiceProvider)
           .startPhoneVerification(_fullNumber);
-      if (!mounted) return;
-      setState(() => _resendAfterSeconds = resendAfterSeconds);
-      showSnack(
-        context,
-        'We sent a code to $_fullNumber',
-        type: ToastType.success,
-      );
     } on SessionExpiredException {
       // No local error shown here — AppShell's listener navigates to
-      // LandingPage and shows the "session expired" message itself; showing
-      // a second, screen-local message here would be redundant.
+      // LandingPage and shows the "session expired" message itself;
+      // rethrown so OtpEntry's own catch doesn't also surface a redundant
+      // generic message.
       if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
-    } catch (error) {
-      if (mounted) {
-        showSnack(
-          context,
-          error is AuthException
-              ? error.message
-              : 'Something went wrong. Please try again.',
-          type: ToastType.error,
-        );
-      }
-    } finally {
-      if (mounted) setState(() => _sending = false);
+      rethrow;
     }
   }
 
@@ -107,17 +96,6 @@ class _PhoneVerificationPageState extends ConsumerState<PhoneVerificationPage> {
     }
   }
 
-  Future<int> _resend() async {
-    try {
-      return await ref
-          .read(authServiceProvider)
-          .startPhoneVerification(_fullNumber);
-    } on SessionExpiredException {
-      if (mounted) ref.read(authSessionProvider.notifier).forceSignOut();
-      rethrow;
-    }
-  }
-
   @override
   Widget build(BuildContext context) {
     return VerificationScaffold(
@@ -127,7 +105,7 @@ class _PhoneVerificationPageState extends ConsumerState<PhoneVerificationPage> {
           'Verifying your number unlocks messaging other members and '
           'helps keep the community scam-resistant.',
       onSkip: () => Navigator.pop(context),
-      child: _resendAfterSeconds == null
+      child: !_showOtpEntry
           ? Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
@@ -140,18 +118,13 @@ class _PhoneVerificationPageState extends ConsumerState<PhoneVerificationPage> {
                 const SizedBox(height: 16),
                 GradientButton(
                   label: 'SEND CODE',
-                  isLoading: _sending,
                   onPressed: _numberController.text.trim().isNotEmpty
-                      ? _sendCode
+                      ? _showOtp
                       : null,
                 ),
               ],
             )
-          : OtpEntry(
-              initialResendAfterSeconds: _resendAfterSeconds!,
-              onSubmit: _verify,
-              onResend: _resend,
-            ),
+          : OtpEntry(onSend: _startVerification, onSubmit: _verify),
     );
   }
 }

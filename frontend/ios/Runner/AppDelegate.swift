@@ -12,5 +12,11 @@ import UIKit
 
   func didInitializeImplicitFlutterEngine(_ engineBridge: FlutterImplicitEngineBridge) {
     GeneratedPluginRegistrant.register(with: engineBridge.pluginRegistry)
+    // Schedule flow's iOS location step (frontend/meetup-scheduling-
+    // PLAN.md's 2026-08-18 platform-split addendum) — bridges
+    // MKLocalSearchCompleter/MKLocalSearch to ios_local_search.dart.
+    // apple_maps_flutter only renders the map; this is app-specific glue
+    // code, not something that belongs in its own plugin package.
+    LocalSearchChannel.register(with: engineBridge.applicationRegistrar.messenger())
   }
 }

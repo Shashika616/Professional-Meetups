@@ -9,5 +9,6 @@ go 1.26.6
 use (
 	./services/auth
 	./services/gateway
+	./services/meetup
 	./shared
 )

@@ -3,11 +3,17 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 
 import 'package:professional_connections_platform/core/models/user_profile.dart';
 import 'package:professional_connections_platform/core/providers/app_providers.dart';
+import 'package:professional_connections_platform/core/services/auth_service.dart';
 import 'package:professional_connections_platform/core/theme/app_palette.dart';
+import 'package:professional_connections_platform/core/utils/snacks.dart';
+import 'package:professional_connections_platform/core/utils/toast.dart';
 import 'package:professional_connections_platform/core/widgets/glass.dart';
+import 'package:professional_connections_platform/core/widgets/gradient_button.dart';
 import 'package:professional_connections_platform/core/widgets/section_label.dart';
 import 'package:professional_connections_platform/core/widgets/professional_avatar.dart';
+import 'package:professional_connections_platform/core/widgets/verification_badges.dart';
 import 'package:professional_connections_platform/features/landing/landing_page.dart';
+import 'package:professional_connections_platform/features/onboarding/onboarding_flow.dart';
 import 'package:professional_connections_platform/features/verification/corporate_email_verification_page.dart';
 import 'package:professional_connections_platform/features/verification/personal_details_page.dart';
 import 'package:professional_connections_platform/features/verification/personal_email_verification_page.dart';
@@ -35,6 +41,18 @@ class ProfilePage extends ConsumerWidget {
             _avatarBlock(profile),
             const SizedBox(height: 22),
             _statsRow(profile),
+            // Level 0 (ADR-014) — visible only for an account that hasn't
+            // connected LinkedIn yet (Apple/Google/email signup, or a
+            // LinkedIn link that hasn't happened). LinkedIn is the ONLY
+            // path to Level 1+, so this is the one place a Level 0 account
+            // can unlock matching/messaging/meetups.
+            if (profile != null && !profile.linkedInConnected) ...[
+              const SizedBox(height: 20),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 20),
+                child: _ConnectLinkedInBanner(),
+              ),
+            ],
             const SizedBox(height: 28),
             _section(
               'VERIFICATION',
@@ -44,22 +62,24 @@ class ProfilePage extends ConsumerWidget {
                   icon: Icons.phone_android,
                   title: 'Phone',
                   done: profile?.phoneVerified ?? false,
+                  locked: !(profile?.linkedInConnected ?? false),
                   buildScreen: (context) => const PhoneVerificationPage(),
                 ),
                 const _Divider(),
                 _Row(
                   icon: Icons.work_outline,
                   title: 'LinkedIn',
-                  // Genuinely conditional on authSessionProvider (via
-                  // `profile`, watched above), not a hardcoded flip — every
-                  // user with a resolved profile signed in with LinkedIn to
-                  // get one (frontend/PLAN.md Step 14), but this must still
-                  // reflect real state rather than assert it unconditionally,
-                  // or it's the same class of staleness bug it replaces. No
-                  // "VERIFY" action to offer either way — sign-in already
-                  // happened, there's nothing to re-verify.
-                  subtitle: profile != null ? 'Connected' : 'Not connected',
-                  trailing: profile != null
+                  // Genuinely conditional on profile.linkedInConnected
+                  // (trustLevel >= 1) — LinkedIn is the sole path to Level
+                  // 1+ (ADR-014 §1), not merely "a profile resolved," since
+                  // Level 0 (Apple/Google/email, no LinkedIn) is now a real,
+                  // common account state. No "VERIFY" action to offer
+                  // either way — the banner above is the actual entry
+                  // point for connecting it.
+                  subtitle: (profile?.linkedInConnected ?? false)
+                      ? 'LinkedIn Verified'
+                      : 'Not connected',
+                  trailing: (profile?.linkedInConnected ?? false)
                       ? const Icon(
                           Icons.check_circle_rounded,
                           size: 18,
@@ -73,6 +93,7 @@ class ProfilePage extends ConsumerWidget {
                   icon: Icons.alternate_email_rounded,
                   title: 'Personal Email',
                   done: profile?.personalEmailVerified ?? false,
+                  locked: !(profile?.linkedInConnected ?? false),
                   buildScreen: (context) =>
                       const PersonalEmailVerificationPage(),
                 ),
@@ -82,6 +103,7 @@ class ProfilePage extends ConsumerWidget {
                   icon: Icons.badge_outlined,
                   title: 'Personal Details',
                   done: profile?.personalDetailsComplete ?? false,
+                  locked: !(profile?.linkedInConnected ?? false),
                   buildScreen: (context) => const PersonalDetailsPage(),
                 ),
                 const _Divider(),
@@ -90,6 +112,7 @@ class ProfilePage extends ConsumerWidget {
                   icon: Icons.email_outlined,
                   title: 'Work Email',
                   done: profile?.workEmailVerified ?? false,
+                  locked: !(profile?.linkedInConnected ?? false),
                   buildScreen: (context) =>
                       const CorporateEmailVerificationPage(),
                 ),
@@ -250,6 +273,8 @@ class ProfilePage extends ConsumerWidget {
               letterSpacing: -0.3,
             ),
           ),
+          const SizedBox(height: 8),
+          VerificationBadges(trustLevel: profile?.trustLevel ?? 0),
           // headline (e.g. "SWE • Colombo") has no backend source in this
           // slice — LinkedIn's OIDC userinfo call doesn't return one, and
           // there's nowhere else to get it from yet (UserProfile.headline
@@ -269,8 +294,13 @@ class ProfilePage extends ConsumerWidget {
             child: _StatChip(value: '12', label: 'MEETUPS'),
           ),
           const SizedBox(width: 12),
-          const Expanded(
-            child: _StatChip(value: '4.9', label: 'RATING'),
+          Expanded(
+            child: _StatChip(
+              value: (profile?.ratingCount ?? 0) == 0
+                  ? '—'
+                  : profile!.ratingAverage.toStringAsFixed(1),
+              label: 'RATING',
+            ),
           ),
           const SizedBox(width: 12),
           Expanded(
@@ -307,27 +337,44 @@ class ProfilePage extends ConsumerWidget {
   /// [build]) reports it done, otherwise a VERIFY chip that pushes
   /// [buildScreen] — the exact same screen class the post-LinkedIn
   /// onboarding sequence uses (`onboarding_flow.dart`'s
-  /// `_verificationSequence`), so there's no second implementation of any
-  /// of these flows for the "reached from Profile" case
+  /// `pendingVerificationSteps`), so there's no second implementation of
+  /// any of these flows for the "reached from Profile" case
   /// (`frontend/PLAN.md`'s Level 2/3 addendum, Step 6). Reactive: popping
   /// back here after a successful verify re-renders from the freshly
   /// updated `authSessionProvider` state (no manual refresh needed).
+  ///
+  /// [locked] (ADR-014's Level 0 read-only audit, Step 6): every one of
+  /// these four steps requires LinkedIn server-side (`requireLinkedIn`) —
+  /// tapping VERIFY at Level 0 would just 403. Rather than let that happen,
+  /// the chip is replaced with a locked hint pointing at the LinkedIn
+  /// banner above.
   Widget _verificationRow(
     BuildContext context, {
     required IconData icon,
     required String title,
     required bool done,
+    required bool locked,
     required WidgetBuilder buildScreen,
   }) {
     return _Row(
       icon: icon,
       title: title,
-      subtitle: done ? 'Verified' : 'Not verified',
+      subtitle: done
+          ? 'Verified'
+          : locked
+          ? 'Connect LinkedIn first'
+          : 'Not verified',
       trailing: done
           ? const Icon(
               Icons.check_circle_rounded,
               size: 18,
               color: AppPalette.verified,
+            )
+          : locked
+          ? const Icon(
+              Icons.lock_outline_rounded,
+              size: 16,
+              color: AppPalette.textSecondary,
             )
           : _verifyChip(context, buildScreen),
     );
@@ -354,6 +401,100 @@ class ProfilePage extends ConsumerWidget {
             color: AppPalette.candyBlue,
           ),
         ),
+      ),
+    );
+  }
+}
+
+/// Profile's "Connect LinkedIn" entry point (ADR-014 Step 7) — calls
+/// [AuthSessionNotifier.linkLinkedIn], not `signInWithLinkedIn` (that
+/// creates/resolves an account; this links to the caller's already-
+/// authenticated one). On success, runs the same pending-verification
+/// sequence a fresh-onboarding LinkedIn signup would have shown, so
+/// connecting from Profile doesn't skip the Level 2 steps.
+class _ConnectLinkedInBanner extends ConsumerStatefulWidget {
+  const _ConnectLinkedInBanner();
+
+  @override
+  ConsumerState<_ConnectLinkedInBanner> createState() =>
+      _ConnectLinkedInBannerState();
+}
+
+class _ConnectLinkedInBannerState
+    extends ConsumerState<_ConnectLinkedInBanner> {
+  bool _busy = false;
+
+  Future<void> _connect() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      await ref.read(authSessionProvider.notifier).linkLinkedIn();
+      if (!mounted) return;
+      final profile = ref.read(authSessionProvider).value?.profile;
+      await runVerificationSequence(context, pendingVerificationSteps(profile));
+    } catch (error) {
+      if (mounted) {
+        // A cancellation (closed the browser without finishing) gets a
+        // softer, non-alarming toast, not the red error styling a genuine
+        // network/server failure gets — same distinction
+        // onboarding_flow.dart's sign-in error handling makes.
+        showSnack(
+          context,
+          error is AuthException
+              ? error.message
+              : 'Something went wrong. Please try again.',
+          type: error is SignInCancelledException
+              ? ToastType.info
+              : ToastType.error,
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Glass(
+      radius: 18,
+      tint: AppPalette.candyBlue.withValues(alpha: 0.08),
+      border: AppPalette.candyBlue.withValues(alpha: 0.3),
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(
+                Icons.work_outline,
+                size: 18,
+                color: AppPalette.candyBlue,
+              ),
+              const SizedBox(width: 8),
+              const Text(
+                'Connect LinkedIn',
+                style: TextStyle(
+                  color: AppPalette.textPrimary,
+                  fontWeight: FontWeight.w800,
+                  fontSize: 14,
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          const Text(
+            'Your account is restricted to view only until you connect LinkedIn...'
+            'unlock matching, messaging, and meetups.',
+            style: TextStyle(color: AppPalette.textSecondary, fontSize: 12),
+          ),
+          const SizedBox(height: 14),
+          GradientButton(
+            label: 'CONNECT LINKEDIN',
+            height: 44,
+            isLoading: _busy,
+            onPressed: _connect,
+          ),
+        ],
       ),
     );
   }

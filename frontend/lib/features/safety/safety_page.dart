@@ -23,7 +23,7 @@ class SafetyPage extends StatelessWidget {
       backgroundColor: Colors.transparent,
       appBar: AppBar(title: const Text('SAFETY CENTER')),
       body: Padding(
-        padding: const EdgeInsets.fromLTRB(20, 4, 20, 100),
+        padding: const EdgeInsets.fromLTRB(20, 4, 20, 24),
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -144,6 +144,13 @@ class SafetyPage extends StatelessWidget {
                 ),
               ),
             ),
+            // Clears AppShell's floating GlassBottomBar, which this page's
+            // Scaffold body draws underneath (extendBody: true) — computed
+            // per-device rather than a single fixed number, since the
+            // bar's actual height varies with each device's own bottom
+            // safe-area inset (home indicator / gesture nav), and a fixed
+            // value only happened to clear it on some screens.
+            SizedBox(height: 80 + MediaQuery.of(context).padding.bottom),
           ],
         ),
       ),

@@ -7,28 +7,48 @@ import 'package:professional_connections_platform/core/theme/app_palette.dart';
 import 'package:professional_connections_platform/core/widgets/glass_text_field.dart';
 import 'package:professional_connections_platform/core/widgets/gradient_button.dart';
 
-/// Shared 6-digit code entry — used identically by all three OTP-based
-/// verification screens (phone/personal-email/corporate-email) so the
-/// input-plus-timer UI isn't built four times (`frontend/PLAN.md`'s Level
-/// 2/3 addendum, Step 4).
+/// Shared 6-digit code entry — used identically by every OTP-based signup/
+/// verification screen (phone/personal-email/corporate-email/email-signup)
+/// so the input-plus-timer UI isn't built five times.
 ///
-/// The countdown is seeded from [initialResendAfterSeconds] — the server's
-/// actual value from the `Start*Verification` call that preceded this
-/// widget, never a hardcoded client-side guess (self-review checklist).
-/// [onResend] returns the server's fresh `resend_after_seconds` for the
-/// *next* cooldown, which reseeds the timer — if the server ever changes
-/// that value, this widget picks it up rather than assuming it's always 60.
+/// **Optimistic send (UX improvement)**: the caller mounts this widget the
+/// instant the user taps "Send code" — before the network call even
+/// starts, not after it resolves. [onSend] is called automatically once,
+/// on mount, and the countdown is shown from the very first frame using
+/// [resendCooldownSeconds] as an optimistic default. This replaces the
+/// previous design, where the whole screen sat on a loading spinner until
+/// the backend responded — a slow or degraded backend used to stall the
+/// UI outright; now the user sees "code sent, resend in 60s" immediately,
+/// and a slow backend is invisible to them.
+///
+/// [resendCooldownSeconds] matches the backend's real cooldown
+/// (`otpResendCooldown`, `services/auth/internal/service/otp.go`) exactly
+/// as of this writing — if [onSend] resolves with a different value (the
+/// backend's cooldown changed, or diverged for this specific purpose), the
+/// countdown reconciles to that real value instead, same "trust the
+/// server" principle the old design had, just applied after an optimistic
+/// first paint rather than before it.
+///
+/// **Fault tolerance**: if [onSend] fails (network error, transient
+/// backend failure, a genuine rejection like an invalid target), the
+/// countdown resets to 0 immediately rather than being left to run out the
+/// full optimistic cooldown for a code that was never actually sent — the
+/// user can tap "Resend code" right away instead of being stuck waiting on
+/// a countdown for nothing. The failure is shown inline, using the same
+/// error slot a wrong VERIFY attempt uses.
 class OtpEntry extends StatefulWidget {
-  const OtpEntry({
-    super.key,
-    required this.initialResendAfterSeconds,
-    required this.onSubmit,
-    required this.onResend,
-  });
+  const OtpEntry({super.key, required this.onSend, required this.onSubmit});
 
-  final int initialResendAfterSeconds;
+  /// Sends the code — called once automatically on mount (the "first
+  /// send"), and again on every user-initiated "Resend code" tap. Every
+  /// caller today uses the exact same underlying `Start*Verification` call
+  /// for both, so this is intentionally one callback, not two.
+  final Future<int> Function() onSend;
   final Future<void> Function(String code) onSubmit;
-  final Future<int> Function() onResend;
+
+  /// The optimistic default shown before the first [onSend] call resolves.
+  @visibleForTesting
+  static const int resendCooldownSeconds = 60;
 
   @override
   State<OtpEntry> createState() => _OtpEntryState();
@@ -37,7 +57,7 @@ class OtpEntry extends StatefulWidget {
 class _OtpEntryState extends State<OtpEntry> {
   final _codeController = TextEditingController();
   Timer? _timer;
-  late int _secondsRemaining = widget.initialResendAfterSeconds;
+  int _secondsRemaining = OtpEntry.resendCooldownSeconds;
   bool _submitting = false;
   bool _resending = false;
   String? _error;
@@ -50,6 +70,7 @@ class _OtpEntryState extends State<OtpEntry> {
     // controller directly is what makes the VERIFY button react as digits
     // are typed (enabled only once all 6 are entered).
     _codeController.addListener(_onCodeChanged);
+    _sendInitialCode();
   }
 
   void _onCodeChanged() => setState(() {});
@@ -71,6 +92,30 @@ class _OtpEntryState extends State<OtpEntry> {
       });
       if (_secondsRemaining <= 0) _timer?.cancel();
     });
+  }
+
+  /// Fires [OtpEntry.onSend] in the background — the countdown is already
+  /// running optimistically by the time this resolves either way.
+  Future<void> _sendInitialCode() async {
+    try {
+      final resendAfterSeconds = await widget.onSend();
+      if (!mounted) return;
+      // Reconcile with the server's real value only if it differs — avoids
+      // an unnecessary rebuild/visual jump in the (expected) common case
+      // where it matches the optimistic default exactly.
+      if (resendAfterSeconds != _secondsRemaining) {
+        setState(() => _secondsRemaining = resendAfterSeconds);
+      }
+    } catch (error) {
+      if (!mounted) return;
+      _timer?.cancel();
+      setState(() {
+        _secondsRemaining = 0;
+        _error = error is AuthException
+            ? error.message
+            : 'We couldn’t send your code. Tap Resend to try again.';
+      });
+    }
   }
 
   Future<void> _submit() async {
@@ -101,7 +146,7 @@ class _OtpEntryState extends State<OtpEntry> {
     if (_resending || _secondsRemaining > 0) return;
     setState(() => _resending = true);
     try {
-      final resendAfterSeconds = await widget.onResend();
+      final resendAfterSeconds = await widget.onSend();
       if (!mounted) return;
       setState(() {
         _secondsRemaining = resendAfterSeconds;
@@ -131,7 +176,7 @@ class _OtpEntryState extends State<OtpEntry> {
         GlassTextField(
           controller: _codeController,
           icon: Icons.pin_outlined,
-          hint: '——————',
+          hint: '######',
           keyboardType: TextInputType.number,
           maxLength: 6,
           textAlign: TextAlign.center,

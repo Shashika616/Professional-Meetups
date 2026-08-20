@@ -36,7 +36,40 @@ class _FakeAuthService implements AuthService {
   }
 
   @override
-  Future<AuthSession> signInWithLinkedIn() async => throw UnimplementedError();
+  Future<AuthSession> signInWithLinkedIn({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signInWithApple({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signInWithGoogle({
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> signUpWithEmail({
+    required String email,
+    required String code,
+    required String password,
+    required bool ageConfirmedOver18,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> loginWithEmail({
+    required String email,
+    required String password,
+  }) async => throw UnimplementedError();
+
+  @override
+  Future<AuthSession> linkLinkedIn() async => throw UnimplementedError();
+
+  @override
+  Future<int> startEmailSignupOtp(String email) async =>
+      throw UnimplementedError();
 
   @override
   Future<AuthSession> refreshSession(String refreshToken) async =>

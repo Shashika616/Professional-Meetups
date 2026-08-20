@@ -18,3 +18,29 @@ RETURNING *;
 
 -- name: DeleteVerificationCode :exec
 DELETE FROM verification_codes WHERE user_id = $1 AND purpose = $2;
+
+-- Email+password signup (ADR-014 decision #2, migration 0004) — the
+-- account may not exist yet at OTP-send time (see
+-- SignUpOrRecoverWithEmail's recovery path), so these four mirror the
+-- four above exactly except keyed by (purpose, target) instead of
+-- (user_id, purpose), via idx_verification_codes_signup_target. Used only
+-- for VERIFICATION_PURPOSE_EMAIL_SIGNUP; user_id is always NULL on these
+-- rows.
+
+-- name: UpsertVerificationCodeForSignup :one
+INSERT INTO verification_codes (user_id, purpose, target, code_hash, expires_at)
+VALUES (NULL, $1, $2, $3, $4)
+ON CONFLICT (purpose, target) WHERE user_id IS NULL
+DO UPDATE SET code_hash = $3, attempts = 0, expires_at = $4, created_at = now()
+RETURNING *;
+
+-- name: GetVerificationCodeByTarget :one
+SELECT * FROM verification_codes WHERE user_id IS NULL AND purpose = $1 AND target = $2;
+
+-- name: IncrementVerificationAttemptsByTarget :one
+UPDATE verification_codes SET attempts = attempts + 1
+WHERE user_id IS NULL AND purpose = $1 AND target = $2
+RETURNING *;
+
+-- name: DeleteVerificationCodeByTarget :exec
+DELETE FROM verification_codes WHERE user_id IS NULL AND purpose = $1 AND target = $2;

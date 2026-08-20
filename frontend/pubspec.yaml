@@ -44,6 +44,35 @@ dependencies:
   url_launcher: ^6.3.2 # opens LinkedIn's auth URL in the system browser
   crypto: ^3.0.6 # SHA-256 for the PKCE code_challenge
 
+  # Schedule flow's location step (frontend/meetup-scheduling-PLAN.md's
+  # 2026-08-18 testing addendum). maplibre_gl, not mapbox_maps_flutter — a
+  # deliberate divergence from ADR-013's original dependency list, only for
+  # this Stadia-Maps-backed testing pass (see TESTING-NOTES.md). Do not add
+  # mapbox_maps_flutter alongside this speculatively.
+  maplibre_gl: ^0.26.2
+  # Pinned to 14.0.2, not the newest 14.0.3 — 14.0.3's transitive
+  # package_info_plus/win32 bump conflicts with flutter_secure_storage's
+  # own win32 constraint (this app has no Windows target, but pub still
+  # resolves across all platforms a federated plugin declares).
+  geolocator: ^14.0.2 # "Use my current location" on the same step
+  # iOS-only map rendering (ADR-013 §4's third correction, frontend/
+  # meetup-scheduling-PLAN.md's 2026-08-18 platform-split addendum) —
+  # Apple MapKit, no API key/billing, settled as the iOS decision (not
+  # provisional like Android's Stadia choice). Search/autocomplete isn't
+  # exposed by this package (MapKit rendering only) — that's wired
+  # separately via a small native MethodChannel to MKLocalSearchCompleter/
+  # MKLocalSearch, see ios/Runner/LocalSearchChannel.swift.
+  apple_maps_flutter: ^1.4.0
+
+  # Level 0 federated identity (ADR-014): account creation via Sign in
+  # with Apple (iOS) / Google Sign-In (Android) instead of LinkedIn-only.
+  # Versions confirmed against pub.dev at implementation time (2026-08-19),
+  # not the older ones named in frontend/level0-federated-identity-PLAN.md's
+  # own Step 1 — that plan explicitly says to reconfirm latest rather than
+  # use its numbers verbatim.
+  sign_in_with_apple: ^8.1.0
+  google_sign_in: ^7.2.0
+
 dev_dependencies:
   flutter_test:
     sdk: flutter
@@ -65,6 +94,18 @@ dev_dependencies:
 
 # The following section is specific to Flutter packages.
 flutter:
+
+  # Swift Package Manager is on by default in this Flutter version, and
+  # maplibre_gl ships a Package.swift that pulls its native SDK straight
+  # from a public GitHub repo — Xcode then prompts every contributor to
+  # sign in to GitHub during iOS builds, purely to raise the anonymous API
+  # rate limit for that resolution. Disabled here (project-wide, checked
+  # in, not a per-machine `flutter config` toggle) so maplibre_gl installs
+  # through its CocoaPods podspec instead, the same route every other
+  # plugin in this project already uses. After changing this, run
+  # `flutter clean` before the next build.
+  config:
+    enable-swift-package-manager: false
 
   # The following line ensures that the Material Icons font is
   # included with your application, so that you can use the icons in

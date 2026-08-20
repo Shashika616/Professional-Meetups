@@ -6,6 +6,7 @@ func setAllRequired(t *testing.T) {
 	t.Helper()
 	t.Setenv("PORT", "8080")
 	t.Setenv("AUTH_SERVICE_ADDR", "auth:9090")
+	t.Setenv("MEETUP_SERVICE_ADDR", "meetup:9091")
 	t.Setenv("REDIS_ADDR", "redis:6379")
 	t.Setenv("JWT_PUBLIC_KEY_PATH", "/secrets/jwt_public.pem")
 }
@@ -23,6 +24,9 @@ func TestLoadSucceedsWhenAllRequiredVarsSet(t *testing.T) {
 	if cfg.AuthServiceAddr != "auth:9090" {
 		t.Errorf("AuthServiceAddr = %q, want %q", cfg.AuthServiceAddr, "auth:9090")
 	}
+	if cfg.MeetupServiceAddr != "meetup:9091" {
+		t.Errorf("MeetupServiceAddr = %q, want %q", cfg.MeetupServiceAddr, "meetup:9091")
+	}
 	if cfg.RedisAddr != "redis:6379" {
 		t.Errorf("RedisAddr = %q, want %q", cfg.RedisAddr, "redis:6379")
 	}
@@ -32,7 +36,7 @@ func TestLoadSucceedsWhenAllRequiredVarsSet(t *testing.T) {
 }
 
 func TestLoadFailsFastOnMissingVar(t *testing.T) {
-	for _, missing := range []string{"PORT", "AUTH_SERVICE_ADDR", "REDIS_ADDR", "JWT_PUBLIC_KEY_PATH"} {
+	for _, missing := range []string{"PORT", "AUTH_SERVICE_ADDR", "MEETUP_SERVICE_ADDR", "REDIS_ADDR", "JWT_PUBLIC_KEY_PATH"} {
 		t.Run(missing, func(t *testing.T) {
 			setAllRequired(t)
 			t.Setenv(missing, "")

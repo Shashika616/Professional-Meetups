@@ -95,7 +95,7 @@ class _PersonalDetailsPageState extends ConsumerState<PersonalDetailsPage> {
       headline: 'Personal Details',
       trustBenefit:
           'Your legal name and address are never shown to other members '
-          '— they help confirm you\'re a real professional and support '
+          ' they help confirm you\'re a real professional and support '
           'incident response if it\'s ever needed.',
       onSkip: () => Navigator.pop(context),
       child: Column(

@@ -22,6 +22,7 @@ func TestToGRPCStatus(t *testing.T) {
 		{"not found", fmt.Errorf("user 123: %w", ErrNotFound), codes.NotFound},
 		{"invalid input", fmt.Errorf("bad email: %w", ErrInvalidInput), codes.InvalidArgument},
 		{"unauthorized", fmt.Errorf("bad token: %w", ErrUnauthorized), codes.Unauthenticated},
+		{"forbidden", fmt.Errorf("trust level too low: %w", ErrForbidden), codes.PermissionDenied},
 		{"conflict", fmt.Errorf("duplicate: %w", ErrConflict), codes.AlreadyExists},
 		{"internal", fmt.Errorf("db down: %w", ErrInternal), codes.Internal},
 		{"unrecognized error falls back to internal", errors.New("boom"), codes.Internal},

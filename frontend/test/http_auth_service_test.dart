@@ -2,8 +2,10 @@ import 'dart:async';
 import 'dart:convert';
 
 import 'package:flutter_test/flutter_test.dart';
+import 'package:google_sign_in/google_sign_in.dart';
 import 'package:http/http.dart' as http;
 import 'package:http/testing.dart';
+import 'package:sign_in_with_apple/sign_in_with_apple.dart';
 
 import 'package:professional_connections_platform/core/services/auth_service.dart';
 import 'package:professional_connections_platform/core/services/http_auth_service.dart';
@@ -22,6 +24,7 @@ void main() {
         expect(body['authorization_code'], 'code');
         expect(body.containsKey('code_verifier'), isFalse);
         expect(body['redirect_uri'], 'app://callback');
+        expect(body['age_confirmed_over_18'], isTrue);
 
         return http.Response(
           jsonEncode({
@@ -40,6 +43,7 @@ void main() {
       final session = await _serviceWith(client).completeLinkedInOnboarding(
         authorizationCode: 'code',
         redirectUri: 'app://callback',
+        ageConfirmedOver18: true,
       );
 
       expect(session.userId, 'user-1');
@@ -58,6 +62,7 @@ void main() {
         () => _serviceWith(client).completeLinkedInOnboarding(
           authorizationCode: 'bad',
           redirectUri: 'app://callback',
+          ageConfirmedOver18: true,
         ),
         throwsA(
           isA<InvalidGrantException>().having(
@@ -79,6 +84,7 @@ void main() {
         () => _serviceWith(client).completeLinkedInOnboarding(
           authorizationCode: 'code',
           redirectUri: 'app://callback',
+          ageConfirmedOver18: true,
         ),
         throwsA(isA<RateLimitedException>()),
       );
@@ -190,6 +196,156 @@ void main() {
         ),
         throwsA(isA<SignInCancelledException>()),
       );
+    });
+
+    // UX fix: closing the external browser without finishing sign-in used
+    // to leave the caller waiting out the full multi-minute [timeout]
+    // before anything happened — a button that "keeps spinning" from the
+    // user's perspective. appResumedEvents (fed by app-lifecycle-resumed
+    // notifications in the real app) lets this resolve in ~[resumeGracePeriod]
+    // instead.
+    group('appResumedEvents fast-cancellation', () {
+      test('a resume with no matching redirect arriving within the grace '
+          'period cancels quickly, well before the backstop timeout', () async {
+        final redirects = StreamController<Uri>();
+        addTearDown(redirects.close);
+        final resumes = StreamController<void>();
+        addTearDown(resumes.close);
+
+        final future = resolveAuthRedirect(
+          initialLink: Future.value(null),
+          redirectStream: redirects.stream,
+          expectedState: 'expected-state',
+          timeout: const Duration(minutes: 5),
+          appResumedEvents: resumes.stream,
+          resumeGracePeriod: const Duration(milliseconds: 50),
+        );
+
+        resumes.add(null); // user returned to the app...
+        // ...and no matching redirect ever arrives.
+
+        await expectLater(future, throwsA(isA<SignInCancelledException>()));
+      });
+
+      test('a redirect that arrives within the grace period after resume '
+          'still wins — a successful sign-in is not mistaken for a '
+          'cancellation just because the app also resumed', () async {
+        final redirects = StreamController<Uri>();
+        addTearDown(redirects.close);
+        final resumes = StreamController<void>();
+        addTearDown(resumes.close);
+        final matching = Uri.parse(
+          'professionalconnections://auth/linkedin/callback'
+          '?code=code&state=expected-state',
+        );
+
+        final future = resolveAuthRedirect(
+          initialLink: Future.value(null),
+          redirectStream: redirects.stream,
+          expectedState: 'expected-state',
+          timeout: const Duration(minutes: 5),
+          appResumedEvents: resumes.stream,
+          resumeGracePeriod: const Duration(milliseconds: 200),
+        );
+
+        resumes.add(null);
+        redirects.add(matching); // arrives just after resume, well within
+        // the grace period — the real, common-case ordering.
+
+        expect(await future, matching);
+      });
+
+      test('a resume event after the redirect already arrived does nothing — '
+          'no spurious cancellation of an already-decided sign-in', () async {
+        final redirects = StreamController<Uri>();
+        addTearDown(redirects.close);
+        final resumes = StreamController<void>();
+        addTearDown(resumes.close);
+        final matching = Uri.parse(
+          'professionalconnections://auth/linkedin/callback'
+          '?code=code&state=expected-state',
+        );
+
+        final future = resolveAuthRedirect(
+          initialLink: Future.value(null),
+          redirectStream: redirects.stream,
+          expectedState: 'expected-state',
+          timeout: const Duration(minutes: 5),
+          appResumedEvents: resumes.stream,
+          resumeGracePeriod: const Duration(milliseconds: 50),
+        );
+
+        redirects.add(matching);
+        expect(await future, matching);
+
+        // A later resume (e.g. backgrounding the app again afterwards)
+        // must not throw into an already-completed future.
+        resumes.add(null);
+        await Future<void>.delayed(const Duration(milliseconds: 100));
+      });
+    });
+  });
+
+  group('mapAppleSignInError', () {
+    test('a user-initiated cancellation maps to SignInCancelledException', () {
+      const error = SignInWithAppleAuthorizationException(
+        code: AuthorizationErrorCode.canceled,
+        message: 'The operation couldn’t be completed. (com.apple... 1001.)',
+      );
+
+      expect(mapAppleSignInError(error), isA<SignInCancelledException>());
+    });
+
+    test('a non-cancellation authorization error maps to a clean '
+        'AuthNetworkException whose message contains no raw platform detail', () {
+      const error = SignInWithAppleAuthorizationException(
+        code: AuthorizationErrorCode.unknown,
+        message:
+            'The operation couldn’t be completed. '
+            '(com.apple.AuthenticationServices.AuthorizationError error 1000.)',
+      );
+
+      final mapped = mapAppleSignInError(error);
+
+      expect(mapped, isA<AuthNetworkException>());
+      expect(mapped.message, isNot(contains('com.apple')));
+      expect(mapped.message, isNot(contains('1000')));
+    });
+
+    test('a not-supported error maps to a clean AuthNetworkException', () {
+      const error = SignInWithAppleNotSupportedException(
+        message: 'Sign in with Apple is not supported on this device.',
+      );
+
+      final mapped = mapAppleSignInError(error);
+
+      expect(mapped, isA<AuthNetworkException>());
+      expect(mapped.message, isNot(contains('not supported on this')));
+    });
+  });
+
+  group('mapGoogleSignInError', () {
+    test('a user-initiated cancellation maps to SignInCancelledException', () {
+      const error = GoogleSignInException(
+        code: GoogleSignInExceptionCode.canceled,
+        description: 'The user canceled the sign-in flow.',
+      );
+
+      expect(mapGoogleSignInError(error), isA<SignInCancelledException>());
+    });
+
+    test('a non-cancellation error maps to a clean AuthNetworkException whose '
+        'message contains no raw platform detail', () {
+      const error = GoogleSignInException(
+        code: GoogleSignInExceptionCode.interrupted,
+        description: 'com.google.GIDSignIn error 12: something exploded',
+      );
+
+      final mapped = mapGoogleSignInError(error);
+
+      expect(mapped, isA<AuthNetworkException>());
+      expect(mapped.message, isNot(contains('com.google')));
+      expect(mapped.message, isNot(contains('exploded')));
     });
   });
 }

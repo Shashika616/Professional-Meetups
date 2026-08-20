@@ -19,20 +19,22 @@ import (
 // nothing constructed a jwt.Verifier before backend/PLAN.md's Level 2/3
 // addendum, Step F.
 type Config struct {
-	Port             string
-	AuthServiceAddr  string
-	RedisAddr        string
-	JWTPublicKeyPath string
+	Port              string
+	AuthServiceAddr   string
+	MeetupServiceAddr string
+	RedisAddr         string
+	JWTPublicKeyPath  string
 }
 
 // Load reads Config from the environment, failing fast if any required
 // variable is missing or empty.
 func Load() (Config, error) {
 	cfg := Config{
-		Port:             os.Getenv("PORT"),
-		AuthServiceAddr:  os.Getenv("AUTH_SERVICE_ADDR"),
-		RedisAddr:        os.Getenv("REDIS_ADDR"),
-		JWTPublicKeyPath: os.Getenv("JWT_PUBLIC_KEY_PATH"),
+		Port:              os.Getenv("PORT"),
+		AuthServiceAddr:   os.Getenv("AUTH_SERVICE_ADDR"),
+		MeetupServiceAddr: os.Getenv("MEETUP_SERVICE_ADDR"),
+		RedisAddr:         os.Getenv("REDIS_ADDR"),
+		JWTPublicKeyPath:  os.Getenv("JWT_PUBLIC_KEY_PATH"),
 	}
 
 	required := []struct {
@@ -41,6 +43,7 @@ func Load() (Config, error) {
 	}{
 		{"PORT", cfg.Port},
 		{"AUTH_SERVICE_ADDR", cfg.AuthServiceAddr},
+		{"MEETUP_SERVICE_ADDR", cfg.MeetupServiceAddr},
 		{"REDIS_ADDR", cfg.RedisAddr},
 		{"JWT_PUBLIC_KEY_PATH", cfg.JWTPublicKeyPath},
 	}

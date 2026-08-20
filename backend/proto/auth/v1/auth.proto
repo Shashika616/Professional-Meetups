@@ -9,21 +9,80 @@ option go_package = "github.com/professional-connections/backend/shared/proto/au
 // gateway translates the public REST API into these calls. See
 // backend/PLAN.md for the REST contract the gateway exposes.
 service AuthService {
-  // Exchanges a LinkedIn OIDC authorization code for a Professional
-  // Connections session. Creates the user record on first login.
+  // Creates a Level 0 account, or logs in if this (provider, subject)
+  // already has one (ADR-014). Unauthenticated — this is how a caller gets
+  // their first token, via Sign in with Apple (iOS) or Google Sign-In
+  // (Android) rather than LinkedIn, which is no longer required to create
+  // an account at all. Verifies id_token against the provider's own
+  // published JWKS (internal/identity) — no server-to-server code
+  // exchange, unlike LinkedIn's flow below.
   //
-  // Deliberately no PKCE code_verifier here despite ADR-011 originally
-  // specifying one: LinkedIn's Sign In with LinkedIn / OpenID Connect
-  // product rejects the token exchange outright when code_challenge/
-  // code_verifier are present (confirmed via manual curl testing against
-  // LinkedIn's real endpoint — identical requests succeed with PKCE
-  // omitted, fail with 401 invalid_client when included; LinkedIn's own
-  // /oauth/v2/accessToken docs don't list code_verifier as a supported
-  // parameter for this product either). Security is still sound without
-  // it: this is a confidential client — the LinkedIn client_secret lives
-  // only in this service, never in the mobile app — which is what PKCE
-  // exists to substitute for on a public client that can't hold a secret.
+  // Rejects with a clear, specific error if age_confirmed_over_18 is
+  // false — the server enforces this regardless of what the client UI
+  // showed; never trust the client to have actually displayed the
+  // checkbox.
+  rpc CompleteFederatedSignup(CompleteFederatedSignupRequest) returns (SessionResponse);
+
+  // Creates a Level 1 account directly via LinkedIn, or logs in if this
+  // linkedin_sub already has one — unchanged in behavior from ADR-011,
+  // still unauthenticated, still the one path that grants Level 1
+  // immediately (ADR-014 §1's "LinkedIn is the only path to Level 1,
+  // whether chosen at signup or connected later"). The one addition:
+  // age_confirmed_over_18 is now required and rejected server-side if
+  // false, same as every other signup path — LinkedIn direct signup didn't
+  // have an age gate before ADR-014 and needed one, since it's a
+  // standalone account-creation path just like the other three. Internally
+  // calls the same ResolveOrCreateIdentity every federated login uses
+  // (ADR-014's Identity Resolution section) — not a separate lookup.
+  // Deliberately no PKCE code_verifier: LinkedIn's Sign In with LinkedIn /
+  // OpenID Connect product rejects the token exchange outright when
+  // code_challenge/code_verifier are present (confirmed via manual curl
+  // testing against LinkedIn's real endpoint — identical requests succeed
+  // with PKCE omitted, fail with 401 invalid_client when included).
+  // Security is still sound without it: this is a confidential client — the
+  // LinkedIn client_secret lives only in this service, never in the mobile
+  // app — which is what PKCE exists to substitute for on a public client
+  // that can't hold a secret.
   rpc CompleteLinkedInOnboarding(CompleteLinkedInOnboardingRequest) returns (SessionResponse);
+
+  // Links an additional identity to the CALLER's already-authenticated
+  // account (ADR-014's "Connect LinkedIn" Profile flow, or a future
+  // "add Apple/Google as backup sign-in") — gateway sets user_id from the
+  // verified JWT, never client-supplied, same pattern as the Level 2/3
+  // RPCs below. Calls the shared LinkIdentityToUser (ADR-014's Identity
+  // Resolution section) which hard-rejects if (provider, subject) already
+  // belongs to a DIFFERENT user — no silent account merge, the one real
+  // abuse edge in this design. Returns a fresh SessionResponse since
+  // linking LinkedIn bumps trust_level (linking Apple/Google never does,
+  // ADR-014 §1, but the response shape is the same either way).
+  //
+  // The LinkedIn branch reuses authorization_code/redirect_uri (its flow
+  // is authorization-code-based, never hands the mobile app an id_token,
+  // unlike Apple/Google's native-SDK id_token flow) — kept on this one
+  // generic message rather than a second RPC so the gateway has exactly
+  // one authenticated "link an identity" route regardless of provider.
+  rpc LinkIdentity(LinkIdentityRequest) returns (SessionResponse);
+
+  // Email + password (ADR-014 decision #2). Signup requires OTP proof of
+  // inbox control first — StartEmailSignup/CompleteEmailSignup reuse the
+  // same verification_codes mechanism as phone/personal-email/
+  // corporate-email (ADR-012), a new VERIFICATION_PURPOSE_EMAIL_SIGNUP,
+  // not a second OTP subsystem. Unauthenticated — there is no user_id yet
+  // at this point, the account may not even end up created (see
+  // CompleteEmailSignup's recovery case).
+  rpc StartEmailSignup(StartVerificationRequest) returns (StartVerificationResponse);
+  // CompleteEmailSignup calls SignUpOrRecoverWithEmail internally — if
+  // email already matches an existing user's VERIFIED personal_email, this
+  // recovers that account (sets a password on it) rather than creating a
+  // duplicate; otherwise creates a new Level 0 user. See
+  // SignUpOrRecoverWithEmail's own doc comment for why recovery is the
+  // deliberate design here, not a bug.
+  rpc CompleteEmailSignup(CompleteEmailSignupRequest) returns (SessionResponse);
+  // LoginWithPassword returns the same generic "invalid email or password"
+  // error whether the email doesn't exist or the password is wrong — an
+  // account-enumeration-safe pattern already used elsewhere in this
+  // service (backend/ARCHITECTURE.md's error-mapping rationale).
+  rpc LoginWithPassword(LoginWithPasswordRequest) returns (SessionResponse);
 
   // Rotates a refresh token for a new access/refresh token pair. The
   // presented refresh token is invalidated as part of this call, whether or
@@ -56,11 +115,52 @@ service AuthService {
   rpc GetProfile(GetProfileRequest) returns (ProfileResponse);
 }
 
+// IdentityProviderProto — LINKEDIN is valid for LinkIdentityRequest (the
+// Profile "Connect LinkedIn" flow) but never for CompleteFederatedSignup,
+// which only ever accepts APPLE/GOOGLE (LinkedIn's own direct-signup path
+// is CompleteLinkedInOnboarding, unchanged from ADR-011, not this RPC).
+enum IdentityProviderProto {
+  IDENTITY_PROVIDER_UNSPECIFIED = 0;
+  IDENTITY_PROVIDER_APPLE = 1;
+  IDENTITY_PROVIDER_GOOGLE = 2;
+  IDENTITY_PROVIDER_LINKEDIN = 3;
+}
+
+message CompleteFederatedSignupRequest {
+  IdentityProviderProto provider = 1;
+  string id_token = 2;
+  bool age_confirmed_over_18 = 3;
+}
+
 message CompleteLinkedInOnboardingRequest {
   string authorization_code = 1;
   string redirect_uri = 2;  // must exactly match the URI used to start the flow
-  reserved 3;                // was pkce_verifier — see AuthService's comment above for why PKCE was dropped
+  bool age_confirmed_over_18 = 3;
+  reserved 4;                // was pkce_verifier — see AuthService's comment above for why PKCE was dropped
   reserved "pkce_verifier";
+}
+
+message LinkIdentityRequest {
+  string user_id = 1;              // set by gateway from verified JWT
+  IdentityProviderProto provider = 2;
+  string id_token = 3;             // Apple/Google branch: native-SDK id_token, verified via internal/identity
+  // LinkedIn branch: its flow is authorization-code, not a native-SDK
+  // id_token like Apple/Google, so it needs its own pair of fields on this
+  // one generic message rather than a second RPC.
+  string authorization_code = 4;
+  string redirect_uri = 5;         // must exactly match the URI used to start the flow
+}
+
+message CompleteEmailSignupRequest {
+  string email = 1;
+  string code = 2;            // the OTP just verified via StartEmailSignup
+  string password = 3;        // hashed server-side (argon2id) before storage, never logged
+  bool age_confirmed_over_18 = 4;
+}
+
+message LoginWithPasswordRequest {
+  string email = 1;
+  string password = 2;
 }
 
 message SessionResponse {
@@ -102,6 +202,12 @@ enum VerificationPurpose {
   VERIFICATION_PURPOSE_PHONE = 1;
   VERIFICATION_PURPOSE_PERSONAL_EMAIL = 2;
   VERIFICATION_PURPOSE_CORPORATE_EMAIL = 3;
+  // Email+password signup (ADR-014 decision #2) — StartEmailSignup is
+  // unauthenticated, so StartVerificationRequest.user_id is always "" for
+  // this purpose; the service layer routes it to the target-keyed
+  // verification_codes methods instead (migration 0004), not the
+  // userID-keyed ones the other three purposes use.
+  VERIFICATION_PURPOSE_EMAIL_SIGNUP = 4;
 }
 
 message StartVerificationRequest {
@@ -150,4 +256,9 @@ message ProfileResponse {
   bool personal_details_complete = 7;
   string company_domain = 8;
   bool work_email_verified = 9;
+  // Post-meetup star rating aggregate (ADR-015,
+  // docs/02-domain/domain-model.md § Rating) — read here from the same
+  // users columns services/meetup writes to after SubmitRating.
+  double rating_average = 10;
+  int32 rating_count = 11;
 }

@@ -32,11 +32,14 @@ Business/product truth for this app lives in `docs/` (exported from the Cowork p
 
 **Check `docs/00-project/action-tracker.md` at the start of any nontrivial task.** It's the current, actively-maintained checklist of what's outstanding (pending decisions, human-prerequisite steps not yet done, deliberately-deferred gaps) — more current than this file's own Known Gaps section below, which can drift between vault syncs.
 
+**Also check `TESTING-NOTES.md` at the repo root before treating any verification or map/location behavior as production-real.** It tracks active testing-only shortcuts (currently: a hardcoded OTP bypass, and a provisional Stadia Maps API key standing in for an undecided final map provider) that must not ship. Unlike `docs/`, this file is not vault-generated — it's a live working note, edit it directly when adding or removing a shortcut.
+
 ## Known Gaps
 
 - **Level 1a (LinkedIn federated onboarding) — fixed (2026-08-16/17).** `onboarding_flow.dart` runs a real LinkedIn OAuth/OIDC flow against the live backend (ADR-011), replacing the old mandatory phone → LinkedIn-URL-paste → corporate-email wizard. PKCE was later removed from this flow (LinkedIn's self-serve product doesn't support it — see ADR-011's correction section); `state`-based CSRF protection remains.
-- **Level 2/3 (phone/personal-email/personal-details, corporate email MVP) — fully planned and audited, not yet built, as of 2026-08-17.** `backend/PLAN.md`/`frontend/PLAN.md`'s Level 2/3 addenda are the execution brief (see ADR-012 and its correction section for the design decisions — phone verification uses the same backend-owned OTP mechanism as email, not Firebase; Twilio for SMS, Resend for email, both with logging fallbacks when credentials are empty). Level 1b (pasted-URL LinkedIn fallback) and Level 4 (KYC) remain unbuilt and out of scope for this pass — don't build UI or backend for either without an explicit go-ahead. `IntentType.requiredTrustLevel`/`UserProfile` will need extending once Level 2/3 land server-side — don't add speculative fields ahead of the backend that would back them.
-- **This file's "Architecture" section below is stale in places** (written when the frontend was mock-only and onboarding was still the old 4-step wizard) — cross-check against the actual code rather than trusting the Navigation/Architecture prose blindly until it's refreshed. Tracked in `docs/00-project/action-tracker.md`.
+- **Level 2/3 (phone/personal-email/personal-details, corporate email MVP) — built and committed (2026-08-18, commit `b94ad1d`).** See ADR-012 and its correction section for the design decisions actually implemented (phone verification uses the same backend-owned OTP mechanism as email, not Firebase; Twilio for SMS, Resend for email, both with logging fallbacks when credentials are empty). Level 1b (pasted-URL LinkedIn fallback) and Level 4 (KYC) remain unbuilt and out of scope — don't build UI or backend for either without an explicit go-ahead.
+- **Meetup scheduling (ADR-013) — built, not yet committed, as of 2026-08-18.** Host-initiated meetups with join requests (a new `services/meetup` backend, `Meetup`/`MeetupRequest` in `docs/02-domain/domain-model.md`), superseding Match→Meetup as the Phase 1 mechanism. `IntentType.requiredTrustLevel`'s default is now **2**, not 1 (mirrored server-side in `services/meetup/internal/service/trustgate.go` — a change to one side must be made on the other too). Full Safety Gate wired in. The mock `MatchesPage`/`MockMatchingService`/`MatchProfile` are deleted, not kept in parallel — `matches_page.dart` is now the real browse-open-meetups surface, wired to a real `MeetupService`. **This whole slice is uncommitted** — don't assume it's on `origin/develop` yet.
+- **Active testing-only shortcuts — see `TESTING-NOTES.md` at the repo root.** A hardcoded OTP bypass and a provisional (not final) map/location provider choice. Must not ship either.
 
 ## Commands
 
@@ -69,11 +72,11 @@ iOS-specific notes:
 
 ## Architecture
 
-The Flutter app under `frontend/` started as a frontend-only scaffold with every service as a `Mock*` implementation. **As of ADR-011, `AuthService` is real** (`HttpAuthService`, talking to the live `backend/` gateway — see `frontend/PLAN.md`) — `MockAuthService` is kept only for widget tests, not used at runtime. Other services (`MatchingService`, etc.) remain mock-only until their own backend slices are built. The codebase is deliberately structured so each mock can be swapped for a real implementation independently, one bounded slice at a time, without touching unrelated UI code. Everything below is relative to `frontend/`.
+The Flutter app under `frontend/` started as a frontend-only scaffold with every service as a `Mock*` implementation. **As of ADR-011, `AuthService` is real** (`HttpAuthService`, talking to the live `backend/` gateway) — `MockAuthService` is kept only for widget tests, not used at runtime. **As of ADR-013, `MeetupService` is also real** (`HttpMeetupService`) — the old `MatchingService`/`MockMatchingService`/`MatchProfile` are deleted, not kept as a parallel mock. The codebase is deliberately structured so each mock can be swapped for a real implementation independently, one bounded slice at a time, without touching unrelated UI code — that's still the pattern for whatever's next (messaging, SOS, etc.), it's just that fewer things are still mocked than when this section was first written. Everything below is relative to `frontend/`.
 
 ### State management: Riverpod
 
-All app-wide state and dependency wiring lives in [frontend/lib/core/providers/app_providers.dart](frontend/lib/core/providers/app_providers.dart). Services are exposed as plain `Provider`s (e.g. `authServiceProvider`, `matchingServiceProvider`), currently bound to their `Mock*` implementations — this is the single seam to swap in real implementations. UI reads state via `ConsumerWidget`/`ConsumerStatefulWidget` and `ref.watch`/`ref.read`; there's no other state management approach in the app.
+All app-wide state and dependency wiring lives in [frontend/lib/core/providers/app_providers.dart](frontend/lib/core/providers/app_providers.dart). Services are exposed as plain `Provider`s (e.g. `authServiceProvider`, `meetupServiceProvider`) — `authServiceProvider`, `meetupServiceProvider`, and `tokenRefresherProvider` are bound to real implementations; anything not yet backed by its own slice stays on a `Mock*`. UI reads state via `ConsumerWidget`/`ConsumerStatefulWidget` and `ref.watch`/`ref.read`; there's no other state management approach in the app.
 
 ### Service-contract pattern
 
@@ -90,19 +93,21 @@ No router package — plain `Navigator.push`/`pushReplacement` with `MaterialPag
 ```
 main.dart → SplashScreen → (session found) → AppShell
                           → (no session) → LandingPage → OnboardingFlow (LinkedIn sign-in;
-                            Level 2/3 steps land here per the Level 2/3 addenda once built)
+                            Level 2/3 steps land here, built as of 2026-08-18)
                           → AppShell (bottom nav: Home, Matches, Safety, Chats, Profile)
 ```
 
 (Superseded 2026-08-17: this was a 4-step phone/LinkedIn/corporate-email wizard with no session persistence — replaced by ADR-011's real LinkedIn OAuth flow plus session-restore-on-launch.)
 
+The "Matches" tab (`matches_page.dart`) is, despite its class/file name kept for minimal navigation churn (ADR-013), no longer the mock swipe-style matching UI — it's the real browse-open-meetups surface, with a "Schedule a Meetup" entry point into `features/meetups/schedule_flow.dart`. `features/meetups/` holds the whole meetup-scheduling feature: `schedule_flow.dart`, `meetup_detail_page.dart` (includes the Safety Gate sub-flow), `my_meetups_page.dart` (host request management), and `widgets/` for the platform-split location picker (`map_location_step.dart` dispatches to `ios_map_location_step.dart` or `stadia_map_location_step.dart` — see `TESTING-NOTES.md` for why the Android half is still provisional).
+
 `AppShell` ([frontend/lib/app_shell.dart](frontend/lib/app_shell.dart)) is a simple `IndexedStack`-style page switcher driven by local `setState`, not nested routing.
 
 ### Trust-level gating
 
-`IntentType` ([frontend/lib/core/models/intent_type.dart](frontend/lib/core/models/intent_type.dart)) encodes both display metadata (label/icon) and a `requiredTrustLevel` per intent (e.g. `rideShare`/`dating` require trust level 4, everything else level 1), exposed via `isUnlockedFor(trustLevel)`. `UserProfile.trustLevel` is meant to drive this gating throughout the matching/home features — check this enum before adding a new intent type or changing unlock rules.
+`IntentType` ([frontend/lib/core/models/intent_type.dart](frontend/lib/core/models/intent_type.dart)) encodes both display metadata (label/icon) and a `requiredTrustLevel` per intent — `rideShare`/`dating` require trust level 4, everything else requires **level 2** (raised from 1 by ADR-013 §2 — hosting/joining a real-world meetup with a stranger is the level ADR-006 already calls "the real floor for interacting with strangers," not mere LinkedIn sign-in), exposed via `isUnlockedFor(trustLevel)`. This is mirrored server-side in `backend/services/meetup/internal/service/trustgate.go` — a change to one side must be made on the other, and the server-side check is the one that's actually enforced; the client-side gate is UX only. `UserProfile.trustLevel` drives this gating throughout the meetup/home features — check this enum before adding a new intent type or changing unlock rules.
 
-**Scope gap vs. [ADR-004](docs/04-decisions/adr-004-defer-dating-and-open-ride-sharing.md):** `dating` and `rideShare` are already full `IntentType` members and appear in `intent_picker_sheet.dart`'s selectable list (it iterates `IntentType.values`) and in the landing page's `orbiting_intents.dart` (both under `frontend/lib/features/`). ADR-004 defers both to Phase 2/3 — they should exist only as modeled-but-inert enum values for now. Don't build out matching/chat/safety infrastructure behind these two intents as part of Phase 1 work without checking the roadmap first; flag it if a task seems to ask for that.
+**Scope gap vs. [ADR-004](docs/04-decisions/adr-004-defer-dating-and-open-ride-sharing.md), now also a Play Store policy question:** `dating` and `rideShare` are already full `IntentType` members and appear in `intent_picker_sheet.dart`'s selectable list (it iterates `IntentType.values`) and in the landing page's `orbiting_intents.dart` (both under `frontend/lib/features/`). ADR-004 defers both to Phase 2/3 — they should exist only as modeled-but-inert enum values for now. Don't build out matching/chat/safety infrastructure behind these two intents as part of Phase 1 work without checking the roadmap first; flag it if a task seems to ask for that. As of the 2026-08-18 App Store/Play Store compliance research (`docs/07-research/app-store-and-play-store-compliance.md`), this is no longer just a scope-discipline concern — Google Play's dating-app age-verification policy applies even to apps where dating is only an incidental, selectable feature, and this app has no age gate anywhere. Don't add real dating functionality behind this intent without that policy question being resolved first (most likely: hide it from the UI entirely until Phase 2 actually builds it).
 
 ### Design system
 
@@ -114,9 +119,13 @@ Dark, glassmorphism-style UI. All colors are tokens in `AppPalette` ([frontend/l
 
 `frontend/lib/features/<feature>/` holds the page, with a `widgets/` subfolder for composed pieces used only by that page (e.g. `features/home/widgets/`, `features/landing/widgets/`). Cross-feature reusable pieces belong in `frontend/lib/core/widgets/` instead, not duplicated per-feature.
 
-## Security rule (forward-looking)
+## Security rule
 
-There's no persistence layer yet, but when one is added: per [ADR-003](docs/04-decisions/adr-003-ephemeral-work-email-verification.md), a raw work-email address must never be stored past the verification round-trip — persist only `company_domain`, `work_email_verified`, and `verified_at` (90-day re-verification), never the address itself.
+Per [ADR-003](docs/04-decisions/adr-003-ephemeral-work-email-verification.md), a raw work-email address must never be stored past the verification round-trip — persist only `company_domain`, `work_email_verified`, and `verified_at` (90-day re-verification), never the address itself. This is a live rule now, not forward-looking — `backend/services/auth`'s Postgres schema and the Level 2/3 verification code (committed `b94ad1d`) are what it actually governs; check `verifyAndConsumeCode`/the corporate-email verification path before touching that flow.
+
+## Security review rule
+
+Every non-trivial security review — before marking backend/frontend auth, verification, or payment-adjacent work "reviewed" — walk [Security Review Framework](docs/03-architecture/security-review-framework.md)'s six properties explicitly (Confidentiality, Integrity, Availability, Authenticity, Non-repudiation, Authorization/accountability), not just an unstructured bug hunt. It complements [Threat Model](docs/03-architecture/threat-model.md) (scenario-based) rather than replacing it. As of 2026-08-19 it has one open, unfixed finding worth knowing before touching `internal/identity`: the Apple/Google id_token verification has no `nonce` check, a real (if narrow) replay exposure — see the framework doc's Authenticity section for the fix shape, which mirrors LinkedIn's existing `state`-based CSRF pattern.
 
 ## Git rule
 

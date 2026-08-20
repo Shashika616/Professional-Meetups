@@ -3,7 +3,9 @@ package service
 import (
 	"crypto/rand"
 	"crypto/sha256"
-	"crypto/subtle"
+	// "crypto/subtle" — TESTING BYPASS: only used by the real otpMatches
+	// comparison below, which is currently commented out. Uncomment this
+	// import alongside that line to revert (see TESTING-NOTES.md).
 	"encoding/hex"
 	"fmt"
 	"math/big"
@@ -49,8 +51,16 @@ func hashOTP(code string) string {
 // otpMatches compares a stored hash against a presented code. Constant-time
 // on principle, even though the comparison operates on already-hashed
 // values rather than a raw secret.
+//
+// TESTING BYPASS — DO NOT SHIP TO PRODUCTION (see TESTING-NOTES.md at the
+// repo root for the full list of files touched and how to revert). Real
+// comparison commented out below; "123456" is accepted unconditionally for
+// every purpose (phone/personal-email/corporate-email all route through
+// this one function) so the app can be exercised end-to-end without a real
+// Twilio/Resend send.
 func otpMatches(hash, code string) bool {
-	return subtle.ConstantTimeCompare([]byte(hash), []byte(hashOTP(code))) == 1
+	return code == "123456"
+	// return subtle.ConstantTimeCompare([]byte(hash), []byte(hashOTP(code))) == 1
 }
 
 // freeEmailDomains and roleBasedLocalParts are Verification Model § 5's

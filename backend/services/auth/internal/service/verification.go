@@ -13,10 +13,32 @@ import (
 	authv1 "github.com/professional-connections/backend/shared/proto/auth/v1"
 )
 
+// requireLinkedIn rejects a caller who hasn't linked LinkedIn yet — ADR-014
+// §4 makes LinkedIn a hard prerequisite for Level 2+, not just one signal
+// among several, so every RPC that would advance a user toward Level 2/3
+// checks this explicitly rather than relying on computeTrustLevel's
+// passive "stays at 0/1" behavior alone. A clear, specific rejection here
+// beats letting a phone/email OTP go out (a real cost via Twilio/Resend)
+// for a verification that can never actually raise the caller's trust
+// level.
+func (s *Service) requireLinkedIn(ctx context.Context, userID string) (repository.User, error) {
+	user, err := s.users.GetByID(ctx, userID)
+	if err != nil {
+		return repository.User{}, err
+	}
+	if user.LinkedInSub == "" {
+		return repository.User{}, fmt.Errorf("connect LinkedIn before verifying phone, email, or personal details: %w", apperror.ErrForbidden)
+	}
+	return user, nil
+}
+
 // StartPhoneVerification generates and sends a phone OTP.
 func (s *Service) StartPhoneVerification(ctx context.Context, req *authv1.StartVerificationRequest) (*authv1.StartVerificationResponse, error) {
 	if req.GetPurpose() != authv1.VerificationPurpose_VERIFICATION_PURPOSE_PHONE {
 		return nil, apperror.ToGRPCStatus(fmt.Errorf("purpose mismatch for StartPhoneVerification: %w", apperror.ErrInvalidInput))
+	}
+	if _, err := s.requireLinkedIn(ctx, req.GetUserId()); err != nil {
+		return nil, apperror.ToGRPCStatus(err)
 	}
 	return s.startVerificationRPC(ctx, req.GetUserId(), repository.VerificationPurposePhone, req.GetTarget())
 }
@@ -49,6 +71,9 @@ func (s *Service) VerifyPhoneCode(ctx context.Context, req *authv1.VerifyCodeReq
 func (s *Service) StartPersonalEmailVerification(ctx context.Context, req *authv1.StartVerificationRequest) (*authv1.StartVerificationResponse, error) {
 	if req.GetPurpose() != authv1.VerificationPurpose_VERIFICATION_PURPOSE_PERSONAL_EMAIL {
 		return nil, apperror.ToGRPCStatus(fmt.Errorf("purpose mismatch for StartPersonalEmailVerification: %w", apperror.ErrInvalidInput))
+	}
+	if _, err := s.requireLinkedIn(ctx, req.GetUserId()); err != nil {
+		return nil, apperror.ToGRPCStatus(err)
 	}
 	return s.startVerificationRPC(ctx, req.GetUserId(), repository.VerificationPurposePersonalEmail, req.GetTarget())
 }
@@ -84,7 +109,7 @@ func (s *Service) SubmitPersonalDetails(ctx context.Context, req *authv1.SubmitP
 		return nil, apperror.ToGRPCStatus(fmt.Errorf("legal name and address are both required: %w", apperror.ErrInvalidInput))
 	}
 
-	user, err := s.users.GetByID(ctx, req.GetUserId())
+	user, err := s.requireLinkedIn(ctx, req.GetUserId())
 	if err != nil {
 		return nil, apperror.ToGRPCStatus(err)
 	}
@@ -111,6 +136,9 @@ func (s *Service) StartCorporateEmailVerification(ctx context.Context, req *auth
 	// themselves just typed, not about any account's existence.
 	if isRejectedCorporateEmail(req.GetTarget()) {
 		return nil, apperror.ToGRPCStatus(fmt.Errorf("please use your work email, not a personal address: %w", apperror.ErrInvalidInput))
+	}
+	if _, err := s.requireLinkedIn(ctx, req.GetUserId()); err != nil {
+		return nil, apperror.ToGRPCStatus(err)
 	}
 	return s.startVerificationRPC(ctx, req.GetUserId(), repository.VerificationPurposeCorporateEmail, req.GetTarget())
 }
@@ -161,6 +189,8 @@ func (s *Service) GetProfile(ctx context.Context, req *authv1.GetProfileRequest)
 		PersonalDetailsComplete: user.LegalName != "" && user.Address != "",
 		CompanyDomain:           user.CompanyDomain,
 		WorkEmailVerified:       user.WorkEmailVerified,
+		RatingAverage:           user.RatingAverage,
+		RatingCount:             int32(user.RatingCount),
 	}, nil
 }
 

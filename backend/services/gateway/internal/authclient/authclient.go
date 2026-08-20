@@ -56,7 +56,34 @@ type Profile struct {
 // explicitly, set by the caller (internal/handlers) from the verified
 // JWT — never a client-supplied value.
 type Client interface {
-	CompleteLinkedInOnboarding(ctx context.Context, authorizationCode, redirectURI string) (Session, error)
+	// CompleteFederatedSignup creates a Level 0 account, or logs in if this
+	// (provider, subject) already has one (ADR-014). provider is the REST
+	// wire string ("apple"/"google") — mapped to the proto enum here, not
+	// in internal/handlers, so that mapping lives in exactly one place.
+	// Unauthenticated at the gateway (Register) — this is how a caller
+	// gets their first token via Apple/Google.
+	CompleteFederatedSignup(ctx context.Context, provider, idToken string, ageConfirmedOver18 bool) (Session, error)
+	// CompleteLinkedInOnboarding creates a Level 1 account directly via
+	// LinkedIn, or logs in if this linkedin_sub already has one — unchanged
+	// in behavior from ADR-011, unauthenticated at the gateway.
+	CompleteLinkedInOnboarding(ctx context.Context, authorizationCode, redirectURI string, ageConfirmedOver18 bool) (Session, error)
+	// LinkIdentity links an identity to the caller's already-authenticated
+	// account (ADR-014's Profile "Connect LinkedIn" flow, or a future "add
+	// Apple/Google as backup sign-in") — userID set by the caller from the
+	// verified JWT, never client-supplied. provider is the REST wire string
+	// ("apple" | "google" | "linkedin"); idToken is used for apple/google,
+	// authorizationCode/redirectURI for linkedin — the caller passes only
+	// the pair relevant to provider, the other is ignored server-side.
+	LinkIdentity(ctx context.Context, userID, provider, idToken, authorizationCode, redirectURI string) (Session, error)
+	// StartEmailSignup sends an OTP to email as the first step of the
+	// email+password signup flow (ADR-014 decision #2). Unauthenticated.
+	StartEmailSignup(ctx context.Context, email string) (resendAfterSeconds int32, err error)
+	// CompleteEmailSignup verifies the OTP sent by StartEmailSignup and
+	// creates (or, per SignUpOrRecoverWithEmail, recovers) an account.
+	// Unauthenticated.
+	CompleteEmailSignup(ctx context.Context, email, code, password string, ageConfirmedOver18 bool) (Session, error)
+	// LoginWithPassword signs in with email+password. Unauthenticated.
+	LoginWithPassword(ctx context.Context, email, password string) (Session, error)
 	RefreshSession(ctx context.Context, refreshToken string) (Session, error)
 	// RevokeSession is idempotent — revoking an already-revoked or unknown
 	// token is not an error.
@@ -109,12 +136,105 @@ func (c *grpcClient) Close() error {
 	return c.conn.Close()
 }
 
+// providerFromWire maps the REST wire string to the proto enum — the one
+// place that mapping happens, not duplicated in internal/handlers too.
+func providerFromWire(provider string) (authv1.IdentityProviderProto, error) {
+	switch provider {
+	case "apple":
+		return authv1.IdentityProviderProto_IDENTITY_PROVIDER_APPLE, nil
+	case "google":
+		return authv1.IdentityProviderProto_IDENTITY_PROVIDER_GOOGLE, nil
+	case "linkedin":
+		return authv1.IdentityProviderProto_IDENTITY_PROVIDER_LINKEDIN, nil
+	default:
+		return authv1.IdentityProviderProto_IDENTITY_PROVIDER_UNSPECIFIED, fmt.Errorf("authclient: unknown identity provider %q", provider)
+	}
+}
+
+func (c *grpcClient) CompleteFederatedSignup(
+	ctx context.Context, provider, idToken string, ageConfirmedOver18 bool,
+) (Session, error) {
+	providerProto, err := providerFromWire(provider)
+	if err != nil {
+		return Session{}, err
+	}
+
+	resp, err := c.client.CompleteFederatedSignup(ctx, &authv1.CompleteFederatedSignupRequest{
+		Provider:            providerProto,
+		IdToken:             idToken,
+		AgeConfirmedOver_18: ageConfirmedOver18,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
 func (c *grpcClient) CompleteLinkedInOnboarding(
-	ctx context.Context, authorizationCode, redirectURI string,
+	ctx context.Context, authorizationCode, redirectURI string, ageConfirmedOver18 bool,
 ) (Session, error) {
 	resp, err := c.client.CompleteLinkedInOnboarding(ctx, &authv1.CompleteLinkedInOnboardingRequest{
+		AuthorizationCode:   authorizationCode,
+		RedirectUri:         redirectURI,
+		AgeConfirmedOver_18: ageConfirmedOver18,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) LinkIdentity(
+	ctx context.Context, userID, provider, idToken, authorizationCode, redirectURI string,
+) (Session, error) {
+	providerProto, err := providerFromWire(provider)
+	if err != nil {
+		return Session{}, err
+	}
+
+	resp, err := c.client.LinkIdentity(ctx, &authv1.LinkIdentityRequest{
+		UserId:            userID,
+		Provider:          providerProto,
+		IdToken:           idToken,
 		AuthorizationCode: authorizationCode,
 		RedirectUri:       redirectURI,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) StartEmailSignup(ctx context.Context, email string) (int32, error) {
+	resp, err := c.client.StartEmailSignup(ctx, &authv1.StartVerificationRequest{
+		Purpose: authv1.VerificationPurpose_VERIFICATION_PURPOSE_EMAIL_SIGNUP,
+		Target:  email,
+	})
+	if err != nil {
+		return 0, err
+	}
+	return resp.GetResendAfterSeconds(), nil
+}
+
+func (c *grpcClient) CompleteEmailSignup(
+	ctx context.Context, email, code, password string, ageConfirmedOver18 bool,
+) (Session, error) {
+	resp, err := c.client.CompleteEmailSignup(ctx, &authv1.CompleteEmailSignupRequest{
+		Email:               email,
+		Code:                code,
+		Password:            password,
+		AgeConfirmedOver_18: ageConfirmedOver18,
+	})
+	if err != nil {
+		return Session{}, err
+	}
+	return sessionFromProto(resp), nil
+}
+
+func (c *grpcClient) LoginWithPassword(ctx context.Context, email, password string) (Session, error) {
+	resp, err := c.client.LoginWithPassword(ctx, &authv1.LoginWithPasswordRequest{
+		Email:    email,
+		Password: password,
 	})
 	if err != nil {
 		return Session{}, err

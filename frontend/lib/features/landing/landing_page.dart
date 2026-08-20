@@ -1,12 +1,13 @@
 import 'package:flutter/material.dart';
 
 import 'package:professional_connections_platform/core/theme/app_palette.dart';
-import 'package:professional_connections_platform/core/utils/snacks.dart';
-import 'package:professional_connections_platform/core/utils/toast.dart';
 import 'package:professional_connections_platform/core/widgets/app_background.dart';
 import 'package:professional_connections_platform/core/widgets/app_icon.dart';
 import 'package:professional_connections_platform/core/widgets/glass.dart';
 import 'package:professional_connections_platform/core/widgets/gradient_button.dart';
+import 'package:professional_connections_platform/core/utils/snacks.dart';
+import 'package:professional_connections_platform/core/utils/toast.dart';
+import 'package:professional_connections_platform/features/auth/email_login_page.dart';
 import 'package:professional_connections_platform/features/landing/widgets/orbiting_intents.dart';
 import 'package:professional_connections_platform/features/onboarding/onboarding_flow.dart';
 
@@ -33,7 +34,7 @@ class _LandingPageState extends State<LandingPage> {
         if (mounted) {
           showSnack(
             context,
-            'Your session expired — please sign in again.',
+            'Your session expired... Please sign in again.',
             type: ToastType.warning,
           );
         }
@@ -70,9 +71,10 @@ class _LandingPageState extends State<LandingPage> {
                 ),
                 const SizedBox(height: 14),
                 GestureDetector(
-                  onTap: () => showSnack(
-                    context,
-                    'Sign in arrives together with the backend.',
+                  onTap: () => Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (context) => const EmailLoginPage(),
+                    ),
                   ),
                   child: const Text.rich(
                     TextSpan(

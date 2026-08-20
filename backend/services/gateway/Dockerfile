@@ -15,9 +15,10 @@ WORKDIR /workspace
 COPY go.work go.work.sum* ./
 COPY shared/go.mod shared/go.sum* ./shared/
 COPY services/gateway/go.mod services/gateway/go.sum* ./services/gateway/
-# go.work lists all three modules, so `go work sync` needs every one of
+# go.work lists all four modules, so `go work sync` needs every one of
 # their go.mod files present even though this image only builds gateway.
 COPY services/auth/go.mod services/auth/go.sum* ./services/auth/
+COPY services/meetup/go.mod services/meetup/go.sum* ./services/meetup/
 RUN go work sync
 
 COPY shared ./shared
